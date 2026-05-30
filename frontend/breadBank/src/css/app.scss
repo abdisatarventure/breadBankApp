@@ -1,1 +1,81 @@
-// app global css in SCSS form
+// BreadBank global styles
+
+:root {
+  --bb-bg: #0A0A1B;
+  --bb-surface: #0F1030;
+  --bb-surface-2: #151540;
+  --bb-border: rgba(255, 255, 255, 0.06);
+  --bb-border-hover: rgba(255, 255, 255, 0.12);
+  --bb-purple: #6C4ED4;
+  --bb-purple-light: #8B6FEC;
+  --bb-pink: #E040FB;
+  --bb-text: #ffffff;
+  --bb-text-dim: #6E6E9A;
+  --bb-text-muted: #3D3D5C;
+  --bb-green: #22C55E;
+  --bb-red: #EF4444;
+  --bb-yellow: #F59E0B;
+}
+
+body.body--dark {
+  background-color: var(--bb-bg) !important;
+}
+
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: var(--bb-bg); }
+::-webkit-scrollbar-thumb { background: #2D2D50; border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: var(--bb-purple); }
+
+.q-page { background-color: var(--bb-bg); }
+
+.bb-card {
+  background: var(--bb-surface);
+  border: 1px solid var(--bb-border);
+  border-radius: 14px;
+  padding: 20px;
+}
+
+.bb-stub {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 360px;
+  gap: 16px;
+
+  .bb-stub-title { font-size: 16px; font-weight: 600; color: var(--bb-text-dim); }
+  .bb-stub-sub { font-size: 13px; color: var(--bb-text-muted); }
+}
+
+.bb-page-header {
+  margin-bottom: 28px;
+
+  .bb-page-title {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--bb-text);
+    margin-bottom: 4px;
+  }
+
+  .bb-page-sub {
+    font-size: 13px;
+    color: var(--bb-text-dim);
+  }
+}
+
+.apexcharts-tooltip {
+  background: #1A1A3E !important;
+  border: 1px solid var(--bb-border) !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4) !important;
+}
+
+.apexcharts-tooltip-title {
+  background: #22224A !important;
+  border-bottom: 1px solid var(--bb-border) !important;
+  color: var(--bb-text) !important;
+}
+
+.apexcharts-menu {
+  background: #1A1A3E !important;
+  border: 1px solid var(--bb-border) !important;
+}
