@@ -46,6 +46,31 @@ export interface DashboardData {
   parkingSpendYtd: number;
 }
 
+export interface ReportMerchant {
+  merchant: string;
+  total: number;
+  txCount: number;
+}
+
+export interface ReportCategoryTrend {
+  category: string;
+  thisYearTotal: number;
+  lastYearTotal: number;
+}
+
+export interface ReportYearOverview {
+  currentYearTotal: number;
+  priorYearTotal: number;
+  currentMonthTotal: number;
+  priorMonthTotal: number;
+}
+
+export interface ReportsData {
+  topMerchants: ReportMerchant[];
+  categoryTrends: ReportCategoryTrend[];
+  yearOverview: ReportYearOverview;
+}
+
 export interface Transaction {
   id: number;
   date: string;
@@ -138,6 +163,9 @@ export const api = {
   getUnknownTransactions: () => request<Transaction[]>('/categories/unknown'),
   createCategory: (name: string, icon?: string, color?: string) =>
     request<Category>('/categories', { method: 'POST', body: JSON.stringify({ name, icon, color }) }),
+
+  // Reports
+  getReports: () => request<ReportsData>('/reports'),
 
   // Accounts
   getAccounts: () => request<Account[]>('/accounts'),
