@@ -83,7 +83,7 @@
         <div class="bb-sep" />
         <span class="bb-breadcrumb">{{ currentTitle }}</span>
         <q-space />
-        <q-btn flat dense unelevated label="Logout" class="bb-logout-btn" @click="logout" />
+        <q-btn flat dense unelevated label="Logout" class="bb-logout-btn" icon="logout" @click="logout" />
       </q-toolbar>
     </q-header>
 
@@ -177,8 +177,20 @@ async function logout() {
 }
 
 .bb-logout-btn {
-  color: #ffffff !important;
-  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  color: var(--bb-text) !important;
+  background: rgba(236, 64, 251, 0.08) !important;
+  border: 1px solid var(--bb-border-hover) !important;
+  border-radius: 6px !important;
+  padding: 4px 10px !important;
+  font-size: 12px !important;
+  min-height: auto !important;
+  height: auto !important;
+  transition: all 0.2s ease !important;
+  
+  &:hover {
+    background: rgba(236, 64, 251, 0.15) !important;
+    border-color: rgba(236, 64, 251, 0.3) !important;
+  }
 }
 
 .bb-search {
