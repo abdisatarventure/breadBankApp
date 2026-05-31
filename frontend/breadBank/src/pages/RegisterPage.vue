@@ -1,8 +1,6 @@
 <template>
   <div class="bb-login-page flex flex-center">
     <div class="bb-login-card">
-
-      <!-- Logo -->
       <div class="bb-login-logo">
         <div class="bb-login-logo-icon">
           <q-icon name="account_balance_wallet" size="26px" color="white" />
@@ -10,13 +8,22 @@
         <span>BreadBank</span>
       </div>
 
-      <div class="bb-login-title">Sign in to your account</div>
-      <div class="bb-login-sub">Track your spending with AI-powered insights</div>
+      <div class="bb-login-title">Create your account</div>
+      <div class="bb-login-sub">Start tracking spending and importing statements</div>
 
-      <q-form class="q-mt-lg" @submit.prevent="handleLogin">
+      <q-form class="q-mt-lg" @submit.prevent="handleRegister">
         <q-banner v-if="errorMessage" class="bb-error-banner" dense type="negative">
           {{ errorMessage }}
         </q-banner>
+
+        <div class="bb-field-label">Name</div>
+        <q-input
+          v-model="name"
+          type="text"
+          placeholder="Your full name"
+          outlined dense dark
+          class="bb-input q-mb-md"
+        />
 
         <div class="bb-field-label">Email</div>
         <q-input
@@ -45,12 +52,10 @@
           </template>
         </q-input>
 
-        <div class="bb-forgot q-mb-lg">Forgot password?</div>
-
         <q-btn
           type="submit"
           no-caps unelevated
-          label="Sign In"
+          label="Create Account"
           class="bb-login-btn full-width q-mb-md"
           :loading="loading"
           :disable="!canSubmit || loading"
@@ -59,11 +64,10 @@
         <div class="bb-divider"><span>or</span></div>
 
         <div class="text-center q-mt-md">
-          <span class="bb-signup-txt">Don't have an account? </span>
-          <span class="bb-signup-link" @click="router.push('/register')">Create one</span>
+          <span class="bb-signup-txt">Already have an account? </span>
+          <span class="bb-signup-link" @click="router.push('/login')">Sign in</span>
         </div>
       </q-form>
-
     </div>
   </div>
 </template>
@@ -73,6 +77,7 @@ import { computed, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { auth } from 'src/services/auth';
 
+const name = ref('');
 const email = ref('');
 const password = ref('');
 const showPwd = ref(false);
@@ -83,7 +88,7 @@ const router = useRouter();
 const emailIsValid = computed(() => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.value));
 const canSubmit = computed(() => email.value.trim().length > 0 && password.value.trim().length > 0);
 
-async function handleLogin() {
+async function handleRegister() {
   errorMessage.value = '';
 
   if (!email.value.trim() || !password.value.trim()) {
@@ -99,10 +104,11 @@ async function handleLogin() {
   loading.value = true;
 
   try {
+    await auth.register(email.value, password.value, name.value);
     await auth.login(email.value, password.value);
     await router.push('/app/dashboard');
   } catch (err) {
-    errorMessage.value = err instanceof Error ? err.message : 'Login failed. Please try again.';
+    errorMessage.value = err instanceof Error ? err.message : 'Registration failed. Please try again.';
   } finally {
     loading.value = false;
   }
@@ -179,15 +185,6 @@ async function handleLogin() {
   &.q-field--focused.q-field--outlined .q-field__control:before {
     border-color: #6C4ED4 !important;
   }
-}
-
-.bb-forgot {
-  font-size: 12px;
-  color: #6C4ED4;
-  text-align: right;
-  cursor: pointer;
-
-  &:hover { color: #8B6FEC; }
 }
 
 .bb-login-btn {

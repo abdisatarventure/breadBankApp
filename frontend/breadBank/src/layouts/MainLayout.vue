@@ -83,6 +83,7 @@
         <div class="bb-sep" />
         <span class="bb-breadcrumb">{{ currentTitle }}</span>
         <q-space />
+        <q-btn flat dense unelevated label="Logout" class="bb-logout-btn" @click="logout" />
       </q-toolbar>
     </q-header>
 
@@ -95,6 +96,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import { auth } from 'src/services/auth';
 
 interface NavItem {
   icon: string;
@@ -128,6 +130,11 @@ const currentTitle = computed(() => {
   const match = allNav.find((n) => route.path.startsWith(n.path));
   return match ? match.label : 'BreadBank';
 });
+
+async function logout() {
+  auth.logout();
+  await router.replace('/login');
+}
 </script>
 
 <style lang="scss">
@@ -167,6 +174,11 @@ const currentTitle = computed(() => {
 
 .bb-search-wrap {
   padding: 0 10px 14px;
+}
+
+.bb-logout-btn {
+  color: #ffffff !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
 }
 
 .bb-search {
