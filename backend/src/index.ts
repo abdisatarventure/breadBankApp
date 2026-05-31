@@ -9,6 +9,7 @@ import categoriesRouter  from './routes/categories';
 import accountsRouter    from './routes/accounts';
 import aiRouter          from './routes/ai';
 import authRouter        from './routes/auth';
+import { requireAuth }  from './middleware/auth';
 
 dotenv.config();
 
@@ -18,12 +19,17 @@ const PORT = process.env.PORT ?? 3000;
 app.use(cors({ origin: 'http://localhost:9000' }));
 app.use(express.json());
 
+// Public routes
+app.use('/api/auth',   authRouter);
+app.get('/api/health', (_req, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));
+
+// All routes below require a valid JWT
+app.use(requireAuth);
 app.use('/api/dashboard',    dashboardRouter);
 app.use('/api/transactions', transactionsRouter);
 app.use('/api/upload',       uploadRouter);
 app.use('/api/categories',   categoriesRouter);
 app.use('/api/accounts',     accountsRouter);
-app.use('/api/auth',         authRouter);
 app.use('/api/ai',           aiRouter);
 
 app.get('/api/health', (_req, res) => {
