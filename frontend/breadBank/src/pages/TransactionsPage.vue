@@ -23,7 +23,7 @@
         :options="['All Categories', ...categoryNames]"
         dense outlined dark
         class="bb-filter-select"
-        @update:model-value="loadTransactions"
+        @update:model-value="() => { offset = 0; void loadTransactions(); }"
       />
       <q-btn no-caps flat label="Clear filters" size="sm" style="color:#6E6E9A" @click="clearFilters" />
     </div>
@@ -33,6 +33,11 @@
       <q-spinner color="primary" size="32px" />
       <span>Loading transactions...</span>
     </div>
+
+    <!-- Error -->
+    <q-banner v-else-if="loadError" class="bb-error-banner q-mb-md" dense type="negative" rounded>
+      {{ loadError }}
+    </q-banner>
 
     <!-- Empty -->
     <div v-else-if="transactions.length === 0" class="bb-stub">
@@ -79,6 +84,23 @@
       </div>
     </div>
 
+    <!-- Pagination -->
+    <div v-if="!loading && !loadError && total > PAGE_SIZE" class="bb-pagination q-mt-md">
+      <q-btn
+        flat dense no-caps icon="chevron_left" label="Prev"
+        :disable="!hasPrev"
+        class="bb-page-btn"
+        @click="goToPrev"
+      />
+      <span class="bb-page-info">Page {{ currentPage }} of {{ totalPages }}</span>
+      <q-btn
+        flat dense no-caps icon-right="chevron_right" label="Next"
+        :disable="!hasNext"
+        class="bb-page-btn"
+        @click="goToNext"
+      />
+    </div>
+
     <!-- Edit dialog -->
     <q-dialog v-model="editOpen">
       <div class="bb-edit-dialog">
@@ -119,14 +141,23 @@
 import { ref, computed, onMounted } from 'vue';
 import { api, type Transaction, type Category } from 'src/services/api';
 
+const PAGE_SIZE = 50;
+
 const transactions   = ref<Transaction[]>([]);
 const categories     = ref<Category[]>([]);
 const loading        = ref(true);
+const loadError      = ref('');
 const total          = ref(0);
+const offset         = ref(0);
 const search         = ref('');
 const filterCategory = ref('All Categories');
 
 let searchTimer: ReturnType<typeof setTimeout> | null = null;
+
+const currentPage  = computed(() => Math.floor(offset.value / PAGE_SIZE) + 1);
+const totalPages   = computed(() => Math.max(1, Math.ceil(total.value / PAGE_SIZE)));
+const hasPrev      = computed(() => offset.value > 0);
+const hasNext      = computed(() => offset.value + PAGE_SIZE < total.value);
 
 const categoryNames = computed(() => categories.value.map(c => c.name));
 const categoryOptions = computed(() => categories.value.map(c => ({ id: c.id, name: c.name, color: c.color })));
@@ -146,8 +177,9 @@ function fmtDate(iso: string) {
 
 async function loadTransactions() {
   loading.value = true;
+  loadError.value = '';
   try {
-    const params: Record<string, string> = { limit: '200' };
+    const params: Record<string, string> = { limit: String(PAGE_SIZE), offset: String(offset.value) };
     if (search.value) params.search = search.value;
     if (filterCategory.value !== 'All Categories') params.category = filterCategory.value;
 
@@ -155,25 +187,43 @@ async function loadTransactions() {
     transactions.value = res.transactions;
     total.value        = res.total;
   } catch (e) {
+    loadError.value = e instanceof Error ? e.message : 'Failed to load transactions';
     console.error(e);
   } finally {
     loading.value = false;
   }
 }
 
+function goToPrev() {
+  if (!hasPrev.value) return;
+  offset.value = Math.max(0, offset.value - PAGE_SIZE);
+  void loadTransactions();
+}
+
+function goToNext() {
+  if (!hasNext.value) return;
+  offset.value += PAGE_SIZE;
+  void loadTransactions();
+}
+
 function onSearchInput() {
   if (searchTimer) clearTimeout(searchTimer);
-  searchTimer = setTimeout(() => { void loadTransactions(); }, 400);
+  searchTimer = setTimeout(() => {
+    offset.value = 0;
+    void loadTransactions();
+  }, 400);
 }
 
 function clearSearch() {
   search.value = '';
+  offset.value = 0;
   void loadTransactions();
 }
 
 function clearFilters() {
   search.value         = '';
   filterCategory.value = 'All Categories';
+  offset.value         = 0;
   void loadTransactions();
 }
 
@@ -270,6 +320,14 @@ onMounted(() => {
 
 .bb-amt-credit { color: #22C55E !important; }
 .bb-amt-debit  { color: #ffffff; }
+
+.bb-pagination {
+  display: flex; align-items: center; justify-content: center; gap: 16px;
+}
+.bb-page-btn  { color: #8B6FEC !important; font-size: 13px; }
+.bb-page-info { font-size: 13px; color: #6E6E9A; min-width: 100px; text-align: center; }
+
+.bb-error-banner { border-radius: 10px; }
 
 .bb-edit-dialog {
   background: #0F1030; border: 1px solid rgba(255,255,255,0.1);

@@ -7,14 +7,18 @@ export interface ParsedTransaction {
   type: 'debit' | 'credit';
 }
 
-function parseDate(raw: string): Date {
+function parseDate(raw: string): Date | null {
   const s = raw.replace(/"/g, '').trim();
+  if (!s) return null;
   const parts = s.split('/');
+  let d: Date;
   if (parts.length === 3) {
-    const [m, d, y] = parts;
-    return new Date(Number(y), Number(m) - 1, Number(d));
+    const [m, day, y] = parts;
+    d = new Date(Number(y), Number(m) - 1, Number(day));
+  } else {
+    d = new Date(s);
   }
-  return new Date(s);
+  return isNaN(d.getTime()) ? null : d;
 }
 
 // Wells Fargo: "Date","Amount","*","*","Description"
@@ -30,8 +34,11 @@ export function parseWellsFargo(csv: string): ParsedTransaction[] {
     const amount = parseFloat(amtStr);
     if (isNaN(amount) || !dateStr || dateStr.toLowerCase() === 'date') continue;
 
+    const parsedDate = parseDate(dateStr);
+    if (!parsedDate) continue;
+
     out.push({
-      date: parseDate(dateStr),
+      date: parsedDate,
       description: desc,
       amount: Math.abs(amount),
       type: amount < 0 ? 'debit' : 'credit',
@@ -46,16 +53,20 @@ export function parseAppleCard(csv: string): ParsedTransaction[] {
 
   return rows
     .filter(r => r['Transaction Date'] && r['Amount (USD)'])
-    .map(r => {
+    .reduce<ParsedTransaction[]>((acc, r) => {
+      const parsedDate = parseDate(r['Transaction Date'] ?? '');
+      if (!parsedDate) return acc;
       const amount = parseFloat((r['Amount (USD)'] ?? '0').replace(',', ''));
+      if (isNaN(amount)) return acc;
       const isPayment = (r['Type'] ?? '').toLowerCase() === 'payment';
-      return {
-        date: parseDate(r['Transaction Date'] ?? ''),
+      acc.push({
+        date: parsedDate,
         description: r['Description'] ?? r['Merchant'] ?? '',
         amount: Math.abs(amount),
         type: (isPayment ? 'credit' : 'debit') as 'debit' | 'credit',
-      };
-    });
+      });
+      return acc;
+    }, []);
 }
 
 // Discover: Trans. Date, Post Date, Description, Amount, Category
@@ -64,15 +75,19 @@ export function parseDiscover(csv: string): ParsedTransaction[] {
 
   return rows
     .filter(r => (r['Trans. Date'] ?? r['Transaction Date']) && r['Amount'])
-    .map(r => {
+    .reduce<ParsedTransaction[]>((acc, r) => {
+      const parsedDate = parseDate(r['Trans. Date'] ?? r['Transaction Date'] ?? '');
+      if (!parsedDate) return acc;
       const amount = parseFloat((r['Amount'] ?? '0').replace(',', ''));
-      return {
-        date: parseDate(r['Trans. Date'] ?? r['Transaction Date'] ?? ''),
+      if (isNaN(amount)) return acc;
+      acc.push({
+        date: parsedDate,
         description: r['Description'] ?? '',
         amount: Math.abs(amount),
         type: (amount > 0 ? 'debit' : 'credit') as 'debit' | 'credit',
-      };
-    });
+      });
+      return acc;
+    }, []);
 }
 
 export function parseCSV(csv: string, accountType: string): ParsedTransaction[] {

@@ -13,7 +13,12 @@
       <span>Loading your finances...</span>
     </div>
 
-    <template v-else>
+    <!-- Load error -->
+    <q-banner v-else-if="loadError" class="bb-error-banner q-mb-lg" dense type="negative" rounded>
+      {{ loadError }}
+    </q-banner>
+
+    <template v-else-if="!loadError">
 
       <!-- AI Summary + Suggestions -->
       <div class="row q-col-gutter-md q-mb-lg">
@@ -38,6 +43,9 @@
               />
             </div>
             <p v-if="aiSummary" class="bb-ai-text" v-html="formatBold(aiSummary)" />
+            <p v-else-if="aiError" class="bb-ai-text bb-ai-placeholder" style="color:#EF4444">
+              {{ aiError }}
+            </p>
             <p v-else class="bb-ai-text bb-ai-placeholder">
               Click Generate to get your AI-powered monthly summary
             </p>
@@ -188,7 +196,9 @@ const now = new Date();
 const currentMonth = now.toLocaleString('default', { month: 'long', year: 'numeric' });
 
 const loading    = ref(true);
+const loadError  = ref('');
 const aiLoading  = ref(false);
+const aiError    = ref('');
 const dash       = ref<DashboardData | null>(null);
 const accounts   = ref<{ balance: number }[]>([]);
 const aiSummary  = ref('');
@@ -215,16 +225,22 @@ function fmt(val: number) {
 }
 
 function formatBold(text: string) {
-  return text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+  const escaped = text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+  return escaped.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
 }
 
 async function loadAiSummary() {
   aiLoading.value = true;
+  aiError.value   = '';
   try {
     const result = await api.getAiSummary(now.getMonth() + 1, now.getFullYear());
-    aiSummary.value      = result.summary;
-    aiSuggestions.value  = result.suggestions;
+    aiSummary.value     = result.summary;
+    aiSuggestions.value = result.suggestions;
   } catch (e) {
+    aiError.value = e instanceof Error ? e.message : 'Failed to generate summary';
     console.error(e);
   } finally {
     aiLoading.value = false;
@@ -240,6 +256,7 @@ onMounted(async () => {
     dash.value     = dashData;
     accounts.value = acctData;
   } catch (e) {
+    loadError.value = e instanceof Error ? e.message : 'Failed to load dashboard';
     console.error(e);
   } finally {
     loading.value = false;

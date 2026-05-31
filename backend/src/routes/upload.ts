@@ -11,10 +11,17 @@ const storage = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10
 router.post('/', storage.single('file'), async (req: Request, res: Response) => {
   if (!req.file) { res.status(400).json({ error: 'No file uploaded' }); return; }
 
+  const originalName = req.file.originalname.toLowerCase();
+  const allowedMimes = ['text/csv', 'text/plain', 'application/csv', 'application/vnd.ms-excel'];
+  if (!originalName.endsWith('.csv') && !allowedMimes.includes(req.file.mimetype)) {
+    res.status(400).json({ error: 'Only CSV files are accepted' });
+    return;
+  }
+
   const accountId   = parseInt(req.body.accountId   as string);
   const accountType = req.body.accountType as string;
 
-  if (!accountId || !accountType) {
+  if (!accountId || isNaN(accountId) || !accountType) {
     res.status(400).json({ error: 'accountId and accountType are required' });
     return;
   }

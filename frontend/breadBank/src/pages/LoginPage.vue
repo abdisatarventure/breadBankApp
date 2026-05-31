@@ -45,7 +45,7 @@
           </template>
         </q-input>
 
-        <div class="bb-forgot q-mb-lg">Forgot password?</div>
+        <div class="bb-forgot q-mb-lg" @click="showForgotNotice">Forgot password?</div>
 
         <q-btn
           type="submit"
@@ -71,6 +71,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { useRouter } from 'vue-router';
+import { useQuasar } from 'quasar';
 import { auth } from 'src/services/auth';
 
 const email = ref('');
@@ -79,6 +80,16 @@ const showPwd = ref(false);
 const loading = ref(false);
 const errorMessage = ref('');
 const router = useRouter();
+const $q = useQuasar();
+
+function showForgotNotice() {
+  $q.notify({
+    message: 'Password reset is not yet available. Please contact your admin for help.',
+    color: 'purple-8',
+    position: 'top',
+    timeout: 4000,
+  });
+}
 
 const emailIsValid = computed(() => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.value));
 const canSubmit = computed(() => email.value.trim().length > 0 && password.value.trim().length > 0);

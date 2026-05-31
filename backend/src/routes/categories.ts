@@ -21,9 +21,19 @@ router.get('/', async (_req, res) => {
 
 router.post('/', async (req, res) => {
   try {
-    const { name, icon, color } = req.body as { name: string; icon?: string; color?: string };
+    const { name, icon, color } = req.body as { name?: string; icon?: string; color?: string };
+
+    if (!name || typeof name !== 'string' || !name.trim()) {
+      res.status(400).json({ error: 'Category name is required' });
+      return;
+    }
+    if (name.trim().length > 100) {
+      res.status(400).json({ error: 'Category name must be 100 characters or fewer' });
+      return;
+    }
+
     const result = await getPool().request()
-      .input('name',  sql.NVarChar(100), name)
+      .input('name',  sql.NVarChar(100), name.trim())
       .input('icon',  sql.NVarChar(50),  icon  ?? 'label')
       .input('color', sql.NVarChar(20),  color ?? '#6C4ED4')
       .query(`

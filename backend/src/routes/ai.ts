@@ -12,12 +12,19 @@ const router = Router();
 router.post('/summary', async (req, res) => {
   try {
     const pool = getPool();
-    const { month, year } = req.body as { month: number; year: number };
+    const { month, year } = req.body as { month: unknown; year: unknown };
 
-    const start    = new Date(year, month - 1, 1);
-    const end      = new Date(year, month, 0);
-    const prevStart = new Date(year, month - 2, 1);
-    const prevEnd   = new Date(year, month - 1, 0);
+    const m = Number(month);
+    const y = Number(year);
+    if (!Number.isInteger(m) || m < 1 || m > 12 || !Number.isInteger(y) || y < 2000 || y > 2100) {
+      res.status(400).json({ error: 'month must be 1–12 and year must be between 2000 and 2100' });
+      return;
+    }
+
+    const start    = new Date(y, m - 1, 1);
+    const end      = new Date(y, m, 0);
+    const prevStart = new Date(y, m - 2, 1);
+    const prevEnd   = new Date(y, m - 1, 0);
 
     const [cur, prev, topCat, topMerch, subs, cats] = await Promise.all([
       pool.request().input('s', sql.Date, start).input('e', sql.Date, end).query(`

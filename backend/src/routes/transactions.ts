@@ -9,9 +9,14 @@ router.get('/', async (req, res) => {
     const pool = getPool();
     const { category, account, search, startDate, endDate, limit = '100', offset = '0' } = req.query;
 
+    const rawLimit  = parseInt(limit  as string);
+    const rawOffset = parseInt(offset as string);
+    const safeLimit  = isNaN(rawLimit)  || rawLimit  < 1 ? 100 : Math.min(rawLimit,  1000);
+    const safeOffset = isNaN(rawOffset) || rawOffset < 0 ? 0   : rawOffset;
+
     const request = pool.request()
-      .input('lim',    sql.Int, parseInt(limit  as string))
-      .input('off',    sql.Int, parseInt(offset as string));
+      .input('lim',    sql.Int, safeLimit)
+      .input('off',    sql.Int, safeOffset);
 
     let where = 'WHERE 1=1';
 
@@ -50,9 +55,20 @@ router.get('/', async (req, res) => {
       OFFSET @off ROWS FETCH NEXT @lim ROWS ONLY
     `);
 
-    const countRes = await pool.request().query(
-      `SELECT COUNT(*) AS total FROM transactions`
-    );
+    const countReq = pool.request();
+    if (category)  countReq.input('category',  sql.NVarChar(100), category as string);
+    if (account)   countReq.input('accountId', sql.Int,           parseInt(account as string));
+    if (search)    countReq.input('search',    sql.NVarChar(500), `%${search}%`);
+    if (startDate) countReq.input('startDate', sql.Date,          new Date(startDate as string));
+    if (endDate)   countReq.input('endDate',   sql.Date,          new Date(endDate   as string));
+
+    const countRes = await countReq.query(`
+      SELECT COUNT(*) AS total
+      FROM transactions t
+      LEFT JOIN categories c ON t.category_id = c.id
+      LEFT JOIN accounts   a ON t.account_id  = a.id
+      ${where}
+    `);
 
     res.json({
       transactions: result.recordset,
@@ -110,16 +126,27 @@ router.put('/:id', async (req, res) => {
 router.put('/bulk/categorize', async (req, res) => {
   try {
     const pool = getPool();
-    const { ids, categoryId } = req.body as { ids: number[]; categoryId: number };
+    const { ids, categoryId } = req.body as { ids: unknown; categoryId: unknown };
 
-    for (const id of ids) {
+    if (!Array.isArray(ids) || ids.length === 0 || !Number.isInteger(categoryId) || (categoryId as number) < 1) {
+      res.status(400).json({ error: 'ids must be a non-empty array and categoryId must be a valid integer' });
+      return;
+    }
+
+    const safeIds = (ids as unknown[]).filter(id => Number.isInteger(id) && (id as number) > 0) as number[];
+    if (safeIds.length === 0) {
+      res.status(400).json({ error: 'No valid transaction ids provided' });
+      return;
+    }
+
+    for (const id of safeIds) {
       await pool.request()
         .input('id',         sql.Int, id)
-        .input('categoryId', sql.Int, categoryId)
+        .input('categoryId', sql.Int, categoryId as number)
         .query(`UPDATE transactions SET category_id = @categoryId WHERE id = @id`);
     }
 
-    res.json({ success: true, updated: ids.length });
+    res.json({ success: true, updated: safeIds.length });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Bulk update failed' });
