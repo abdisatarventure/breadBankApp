@@ -186,7 +186,7 @@ async function logout() {
   min-height: auto !important;
   height: auto !important;
   transition: all 0.2s ease !important;
-  
+
   &:hover {
     background: rgba(236, 64, 251, 0.15) !important;
     border-color: rgba(236, 64, 251, 0.3) !important;
