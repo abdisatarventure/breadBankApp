@@ -4,7 +4,7 @@ interface AuthUser {
   name?: string | null;
 }
 
-const BASE = 'http://localhost:3000/api';
+const BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:3000/api';
 const STORAGE_TOKEN_KEY = 'bb_auth_token';
 const STORAGE_USER_KEY = 'bb_auth_user';
 

@@ -210,11 +210,6 @@ async function handleLogin() {
   border-radius: 10px !important;
 }
 
-.bb-error-banner {
-  margin-bottom: 18px;
-  border-radius: 12px;
-}
-
 .bb-divider {
   display: flex;
   align-items: center;

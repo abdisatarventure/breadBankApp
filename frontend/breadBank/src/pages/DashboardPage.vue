@@ -77,16 +77,19 @@
       <!-- Stat Cards -->
       <div class="row q-col-gutter-md q-mb-lg">
 
-        <!-- Total Balance -->
+        <!-- Total Debt -->
         <div class="col-6 col-md-3">
           <div class="bb-stat">
             <div class="bb-stat-lbl">
-              <span class="bb-dot" style="background:#22C55E"></span>
-              TOTAL BALANCE
+              <span class="bb-dot" style="background:#EF4444"></span>
+              TOTAL DEBT
             </div>
-            <div class="bb-stat-val">{{ fmt(totalBalance) }}</div>
-            <div class="bb-stat-row">
-              <span class="bb-badge-up">{{ accountCount }} accounts</span>
+            <div class="bb-stat-val">{{ fmt(totalDebt) }}</div>
+            <div class="bb-stat-row bb-debt-breakdown">
+              <span v-for="d in debtBreakdown" :key="d.name" class="bb-debt-item">
+                {{ d.name }} <strong>{{ fmt(d.owed) }}</strong>
+              </span>
+              <span v-if="debtBreakdown.length === 0" class="bb-stat-cmp">no credit cards</span>
             </div>
           </div>
         </div>
@@ -135,6 +138,25 @@
             </div>
             <div class="bb-savings-bar-wrap">
               <div class="bb-savings-bar" :style="{ width: Math.min(dash?.savingsRate ?? 0, 100) + '%' }" />
+            </div>
+          </div>
+        </div>
+
+        <!-- Metropolis Parking -->
+        <div class="col-6 col-md-3">
+          <div class="bb-stat">
+            <div class="bb-stat-lbl">
+              <span class="bb-dot" style="background:#F59E0B"></span>
+              METROPOLIS PARKING
+            </div>
+            <div class="bb-stat-val">{{ fmt(dash?.parkingSpend ?? 0) }}</div>
+            <div class="bb-stat-row">
+              <span class="bb-stat-cmp">
+                {{ (dash?.parkingTxCount ?? 0) === 1 ? '1 charge' : (dash?.parkingTxCount ?? 0) + ' charges' }} this month
+              </span>
+            </div>
+            <div class="bb-stat-row">
+              <span class="bb-stat-cmp">{{ fmt(dash?.parkingSpendYtd ?? 0) }} so far this year</span>
             </div>
           </div>
         </div>
@@ -190,7 +212,7 @@
 import { ref, computed, onMounted } from 'vue';
 import VueApexCharts from 'vue3-apexcharts';
 import type { ApexOptions } from 'apexcharts';
-import { api, type DashboardData } from 'src/services/api';
+import { api, type DashboardData, type Account } from 'src/services/api';
 
 const now = new Date();
 const currentMonth = now.toLocaleString('default', { month: 'long', year: 'numeric' });
@@ -200,13 +222,22 @@ const loadError  = ref('');
 const aiLoading  = ref(false);
 const aiError    = ref('');
 const dash       = ref<DashboardData | null>(null);
-const accounts   = ref<{ balance: number }[]>([]);
+const accounts   = ref<Account[]>([]);
 const aiSummary  = ref('');
 const aiSuggestions = ref<string[]>([]);
 
 const hasData      = computed(() => (dash.value?.categoryBreakdown.length ?? 0) > 0);
-const totalBalance = computed(() => accounts.value.reduce((s, a) => s + (a.balance ?? 0), 0));
-const accountCount = computed(() => accounts.value.length);
+
+// For a credit account, balance = payments - purchases, so the amount still
+// owed is the negation of that. Clamp at 0 so a paid-off/overpaid card reads
+// as $0 owed rather than a negative "debt".
+const owedFor = (a: Account) => Math.max(0, -(a.balance ?? 0));
+const debtBreakdown = computed(() =>
+  accounts.value
+    .filter(a => a.type === 'credit')
+    .map(a => ({ name: a.name, owed: owedFor(a) })),
+);
+const totalDebt = computed(() => debtBreakdown.value.reduce((s, d) => s + d.owed, 0));
 
 const spendingDown = computed(() => {
   if (!dash.value || dash.value.previousMonthSpending === 0) return true;
@@ -371,6 +402,13 @@ const categoryOpts: ApexOptions = {
 .bb-stat-val { font-size: 22px; font-weight: 700; color: #ffffff; letter-spacing: -0.5px; margin-bottom: 6px; }
 .bb-stat-row { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
 .bb-stat-cmp { font-size: 11px; color: #6E6E9A; }
+
+.bb-debt-breakdown { flex-wrap: wrap; gap: 4px 10px; }
+.bb-debt-item {
+  font-size: 11px;
+  color: #6E6E9A;
+  strong { color: #EF4444; font-weight: 600; }
+}
 
 .bb-badge-up      { font-size: 10px; font-weight: 600; background: rgba(34,197,94,0.15);  color: #22C55E; padding: 2px 7px; border-radius: 20px; }
 .bb-badge-down-good { font-size: 10px; font-weight: 600; background: rgba(34,197,94,0.15);  color: #22C55E; padding: 2px 7px; border-radius: 20px; }

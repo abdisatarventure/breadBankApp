@@ -3,11 +3,15 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
+if (!process.env.DB_PASSWORD) {
+  throw new Error('DB_PASSWORD env var is required — set it in backend/.env (see .env.example).');
+}
+
 const config: sql.config = {
   server: 'localhost',
   database: process.env.DB_NAME ?? 'breadbank',
   user: process.env.DB_USER ?? 'breadbank_user',
-  password: process.env.DB_PASSWORD ?? 'BreadBank2026!',
+  password: process.env.DB_PASSWORD,
   options: {
     instanceName: 'SQLEXPRESS',
     trustServerCertificate: true,

@@ -115,7 +115,7 @@ const selectedAccountId = ref<number | null>(null);
 const isDragging      = ref(false);
 const uploading       = ref(false);
 const fileInput       = ref<HTMLInputElement | null>(null);
-const lastResult      = ref<(UploadResult & { success: boolean }) | null>(null);
+const lastResult      = ref<UploadResult | null>(null);
 const history         = ref<UploadHistory[]>([]);
 const loadingHistory  = ref(true);
 
@@ -161,8 +161,20 @@ function handleFileChange(e: Event) {
   if (file) void processFile(file);
 }
 
+function isCsvFile(file: File): boolean {
+  const csvMimes = ['text/csv', 'text/plain', 'application/csv', 'application/vnd.ms-excel'];
+  return file.name.toLowerCase().endsWith('.csv') || csvMimes.includes(file.type);
+}
+
 async function processFile(file: File) {
   if (!selectedAccountId.value || !selectedAccount.value) {
+    lastResult.value = { success: false, imported: 0, duplicatesSkipped: 0, total: 0 };
+    return;
+  }
+
+  // Client-side guard so non-CSV files fail instantly instead of round-tripping
+  // to the server (which performs the authoritative check).
+  if (!isCsvFile(file)) {
     lastResult.value = { success: false, imported: 0, duplicatesSkipped: 0, total: 0 };
     return;
   }

@@ -51,5 +51,13 @@ BEGIN
     PRINT 'Transfer category added.';
 END
 
+-- Ensure Parking category exists for parking-related transactions
+IF NOT EXISTS (SELECT 1 FROM categories WHERE name = 'Parking')
+BEGIN
+    INSERT INTO categories (name, icon, color, is_system)
+    VALUES ('Parking', 'local_parking', '#F87171', 1);
+    PRINT 'Parking category added.';
+END
+
 PRINT 'Seed data complete.';
 GO

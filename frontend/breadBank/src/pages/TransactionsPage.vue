@@ -251,10 +251,16 @@ async function saveEdit() {
   }
 }
 
-onMounted(() => {
-  void Promise.all([loadTransactions(), api.getCategories()]).then(([, cats]) => {
+onMounted(async () => {
+  try {
+    const [, cats] = await Promise.all([loadTransactions(), api.getCategories()]);
     categories.value = cats;
-  });
+  } catch (e) {
+    // loadTransactions handles its own error state; this catches a failed
+    // category fetch so it isn't silently swallowed.
+    loadError.value = e instanceof Error ? e.message : 'Failed to load page data';
+    console.error(e);
+  }
 });
 </script>
 
@@ -326,8 +332,6 @@ onMounted(() => {
 }
 .bb-page-btn  { color: #8B6FEC !important; font-size: 13px; }
 .bb-page-info { font-size: 13px; color: #6E6E9A; min-width: 100px; text-align: center; }
-
-.bb-error-banner { border-radius: 10px; }
 
 .bb-edit-dialog {
   background: #0F1030; border: 1px solid rgba(255,255,255,0.1);

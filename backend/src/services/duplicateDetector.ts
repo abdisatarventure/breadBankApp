@@ -5,7 +5,7 @@ export interface TxWithAccount extends ParsedTransaction {
   accountId: number;
 }
 
-export async function filterDuplicates(txs: TxWithAccount[]): Promise<{
+export async function filterDuplicates(txs: TxWithAccount[], userId: number | undefined): Promise<{
   unique: TxWithAccount[];
   duplicateCount: number;
 }> {
@@ -17,13 +17,15 @@ export async function filterDuplicates(txs: TxWithAccount[]): Promise<{
 
   for (const tx of txs) {
     const result = await pool.request()
+      .input('userId',      sql.Int,            userId)
       .input('accountId',   sql.Int,           tx.accountId)
       .input('date',        sql.Date,           tx.date)
       .input('amount',      sql.Decimal(12, 2), tx.amount)
       .input('description', sql.NVarChar(500),  tx.description)
       .query(`
         SELECT COUNT(*) AS cnt FROM transactions
-        WHERE account_id = @accountId
+        WHERE user_id     = @userId
+          AND account_id  = @accountId
           AND date        = @date
           AND amount      = @amount
           AND description = @description

@@ -73,7 +73,7 @@
         <q-btn
           flat round dense icon="chevron_left" size="sm"
           style="color: #6E6E9A"
-          @click="router.back()"
+          @click="goBack"
         />
         <q-btn
           flat round dense icon="chevron_right" size="sm"
@@ -130,6 +130,16 @@ const currentTitle = computed(() => {
   const match = allNav.find((n) => route.path.startsWith(n.path));
   return match ? match.label : 'BreadBank';
 });
+
+function goBack() {
+  // Stay inside the app: if there's no in-app history to go back to,
+  // fall back to the dashboard instead of leaving the SPA entirely.
+  if (window.history.state?.back) {
+    router.back();
+  } else {
+    void router.push('/app/dashboard');
+  }
+}
 
 async function logout() {
   auth.logout();

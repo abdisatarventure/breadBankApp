@@ -1,6 +1,6 @@
 import { auth } from 'src/services/auth';
 
-const BASE = 'http://localhost:3000/api';
+const BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:3000/api';
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const token = auth.getToken();
@@ -14,6 +14,15 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     headers,
     ...options,
   });
+  // Token expired or invalid mid-session — clear it and bounce to login
+  // rather than surfacing a confusing error string in the UI.
+  if (res.status === 401) {
+    auth.logout();
+    if (typeof window !== 'undefined') {
+      window.location.href = '/#/login';
+    }
+    throw new Error('Your session has expired. Please sign in again.');
+  }
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
     throw new Error((err as { error: string }).error ?? `HTTP ${res.status}`);
@@ -32,6 +41,9 @@ export interface DashboardData {
   categoryBreakdown: { category: string; total: number }[];
   monthlyTrend: { month: string; monthKey: string; spending: number; income: number }[];
   topMerchants: { merchant: string; total: number; txCount: number }[];
+  parkingSpend: number;
+  parkingTxCount: number;
+  parkingSpendYtd: number;
 }
 
 export interface Transaction {
@@ -65,7 +77,9 @@ export interface Account {
   type: string;
   institution: string;
   transaction_count: number;
-  balance: number;
+  // SUM(...) over an account with no transactions returns NULL, so the
+  // balance can be null even though callers usually coalesce it to 0.
+  balance: number | null;
 }
 
 export interface UploadResult {
