@@ -46,7 +46,27 @@ router.post('/', storage.single('file'), async (req: Request, res: Response) => 
     const toInsert: Array<{ tx: typeof unique[0]; categoryId: number | null; merchant: string }> = [];
     const needsAI:  typeof unique = [];
 
+    // Cache for category-name → id lookups during this upload
+    const categoryIdCache = new Map<string, number | null>();
+    const lookupCategoryId = async (name: string): Promise<number | null> => {
+      if (categoryIdCache.has(name)) return categoryIdCache.get(name)!;
+      const row = await pool.request()
+        .input('name', sql.NVarChar(100), name)
+        .query(`SELECT id FROM categories WHERE name = @name`);
+      const id = (row.recordset[0] as { id: number } | undefined)?.id ?? null;
+      categoryIdCache.set(name, id);
+      return id;
+    };
+
     for (const tx of unique) {
+      // Parser already flagged this row (e.g. a credit-card payment or
+      // internal transfer) — honor it and skip rules/AI entirely.
+      if (tx.category) {
+        const hintedId = await lookupCategoryId(tx.category);
+        toInsert.push({ tx, categoryId: hintedId, merchant: tx.description });
+        continue;
+      }
+
       const rule = await pool.request()
         .input('desc', sql.NVarChar(500), tx.description)
         .query(`
@@ -68,7 +88,8 @@ router.post('/', storage.single('file'), async (req: Request, res: Response) => 
     for (let i = 0; i < needsAI.length; i += BATCH) {
       const batch   = needsAI.slice(i, i + BATCH);
       const results = await categorizeTransactions(
-        batch.map(t => ({ description: t.description, amount: t.amount }))
+        batch.map(t => ({ description: t.description, amount: t.amount })),
+        accountType,
       );
 
       for (let j = 0; j < batch.length; j++) {

@@ -16,17 +16,19 @@ router.get('/', async (_req, res) => {
         .input('start', sql.Date, startOfMonth)
         .query(`
           SELECT
-            SUM(CASE WHEN type='debit'  THEN amount ELSE 0 END) AS totalSpending,
-            SUM(CASE WHEN type='credit' THEN amount ELSE 0 END) AS totalIncome
-          FROM transactions WHERE date >= @start
+            SUM(CASE WHEN t.type='debit'  THEN t.amount ELSE 0 END) AS totalSpending,
+            SUM(CASE WHEN t.type='credit' THEN t.amount ELSE 0 END) AS totalIncome
+          FROM transactions t LEFT JOIN categories c ON t.category_id = c.id
+          WHERE t.date >= @start AND ISNULL(c.name,'') <> 'Transfer'
         `),
 
       pool.request()
         .input('start', sql.Date, startOfLastMo)
         .input('end',   sql.Date, endOfLastMo)
         .query(`
-          SELECT SUM(CASE WHEN type='debit' THEN amount ELSE 0 END) AS totalSpending
-          FROM transactions WHERE date BETWEEN @start AND @end
+          SELECT SUM(CASE WHEN t.type='debit' THEN t.amount ELSE 0 END) AS totalSpending
+          FROM transactions t LEFT JOIN categories c ON t.category_id = c.id
+          WHERE t.date BETWEEN @start AND @end AND ISNULL(c.name,'') <> 'Transfer'
         `),
 
       pool.request()
@@ -34,30 +36,32 @@ router.get('/', async (_req, res) => {
         .query(`
           SELECT c.name AS category, SUM(t.amount) AS total
           FROM transactions t JOIN categories c ON t.category_id = c.id
-          WHERE t.date >= @start AND t.type = 'debit'
+          WHERE t.date >= @start AND t.type = 'debit' AND c.name <> 'Transfer'
           GROUP BY c.name ORDER BY total DESC
         `),
 
       pool.request().query(`
         SELECT
-          FORMAT(date,'MMM')     AS month,
-          FORMAT(date,'yyyy-MM') AS monthKey,
-          SUM(CASE WHEN type='debit'  THEN amount ELSE 0 END) AS spending,
-          SUM(CASE WHEN type='credit' THEN amount ELSE 0 END) AS income
-        FROM transactions
-        WHERE date >= DATEADD(MONTH,-5,DATEFROMPARTS(YEAR(GETDATE()),MONTH(GETDATE()),1))
-        GROUP BY FORMAT(date,'MMM'), FORMAT(date,'yyyy-MM')
+          FORMAT(t.date,'MMM')     AS month,
+          FORMAT(t.date,'yyyy-MM') AS monthKey,
+          SUM(CASE WHEN t.type='debit'  THEN t.amount ELSE 0 END) AS spending,
+          SUM(CASE WHEN t.type='credit' THEN t.amount ELSE 0 END) AS income
+        FROM transactions t LEFT JOIN categories c ON t.category_id = c.id
+        WHERE t.date >= DATEADD(MONTH,-5,DATEFROMPARTS(YEAR(GETDATE()),MONTH(GETDATE()),1))
+          AND ISNULL(c.name,'') <> 'Transfer'
+        GROUP BY FORMAT(t.date,'MMM'), FORMAT(t.date,'yyyy-MM')
         ORDER BY monthKey
       `),
 
       pool.request()
         .input('start', sql.Date, startOfMonth)
         .query(`
-          SELECT TOP 5 merchant, SUM(amount) AS total, COUNT(*) AS txCount
-          FROM transactions
-          WHERE date >= @start AND type='debit'
-            AND merchant IS NOT NULL AND merchant != ''
-          GROUP BY merchant ORDER BY total DESC
+          SELECT TOP 5 t.merchant, SUM(t.amount) AS total, COUNT(*) AS txCount
+          FROM transactions t LEFT JOIN categories c ON t.category_id = c.id
+          WHERE t.date >= @start AND t.type='debit'
+            AND t.merchant IS NOT NULL AND t.merchant != ''
+            AND ISNULL(c.name,'') <> 'Transfer'
+          GROUP BY t.merchant ORDER BY total DESC
         `),
     ]);
 

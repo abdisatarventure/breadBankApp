@@ -5,6 +5,53 @@ export interface ParsedTransaction {
   description: string;
   amount: number;
   type: 'debit' | 'credit';
+  // Optional category hint set by the parser (e.g. 'Transfer' for credit-card
+  // payments and internal account transfers). When set, upload skips the
+  // merchant-rule lookup and AI categorization for this row.
+  category?: string;
+}
+
+// ── Transfer detection ──────────────────────────────────────────────
+// A "transfer" is money moving between your own accounts — it is neither
+// income nor spending and must be excluded from both totals. The two cases
+// we care about:
+//   1. Credit-card payments (paying off Apple Card / Discover / etc.)
+//   2. Internal bank transfers (checking <-> savings, Apple Cash top-ups)
+
+const CARD_PAYMENT_PATTERNS: RegExp[] = [
+  /APPLECARD\s+GSBANK\s+PAYMENT/i,   // Wells Fargo wording for Apple Card payment
+  /APPLE\s*CARD.*PAYMENT/i,
+  /DISCOVER\s+E-?\s*PAYMENT/i,       // "DISCOVER E-PAYMENT"
+  /DISCOVER.*PAYMENT/i,
+  /CHASE\s+CREDIT\s+C(RD|ARD)/i,
+  /CAPITAL\s+ONE.*(PAYMENT|CRCARDPMT)/i,
+  /(AMEX|AMERICAN\s+EXPRESS).*(PAYMENT|EPAYMENT)/i,
+  /CITI\s+CARD.*PAYMENT/i,
+  /CREDIT\s+CARD\s+PAYMENT/i,
+  /CARDMEMBER\s+SERV.*PAYMENT/i,
+];
+
+const INTERNAL_TRANSFER_PATTERNS: RegExp[] = [
+  // Transfers to/from your OWN savings or checking only. We deliberately do
+  // NOT match a bare "ONLINE TRANSFER REF ... TO <merchant>" because that is
+  // a bill-pay to an external party (real spending), not a self-transfer.
+  /ONLINE\s+TRANSFER\s+(TO|FROM).*(SAVINGS|CHECKING)/i,
+  /WFB\s+OPENING\s+DEPOSIT.*TRANSFER/i,
+  /APPLE\s+CASH\s+BANK\s+XFER/i,              // money pulled back from Apple Cash
+  /APPLE\s+CASH\s+SENT/i,                     // money pushed to Apple Cash
+];
+
+/** Returns true if a Wells-Fargo-style description is a self-transfer. */
+export function isTransferDescription(description: string): boolean {
+  return (
+    CARD_PAYMENT_PATTERNS.some(re => re.test(description)) ||
+    INTERNAL_TRANSFER_PATTERNS.some(re => re.test(description))
+  );
+}
+
+/** Returns true if a description looks like a credit-card payment specifically. */
+export function isCardPayment(description: string): boolean {
+  return CARD_PAYMENT_PATTERNS.some(re => re.test(description));
 }
 
 function parseDate(raw: string): Date | null {
@@ -21,18 +68,40 @@ function parseDate(raw: string): Date | null {
   return isNaN(d.getTime()) ? null : d;
 }
 
-// Wells Fargo: "Date","Amount","*","*","Description"
+// Wells Fargo supports two export layouts:
+//   Format A (legacy): Date, Amount, *, *, Description
+//   Format B (current): DATE, DESCRIPTION, AMOUNT, CHECK #, STATUS
 export function parseWellsFargo(csv: string): ParsedTransaction[] {
   const rows = parse(csv, { skip_empty_lines: true, trim: true, relax_quotes: true }) as string[][];
   const out: ParsedTransaction[] = [];
 
+  // Detect format by inspecting the first row
+  const firstRow = rows[0]?.map(c => c.replace(/"/g, '').trim().toUpperCase()) ?? [];
+  // Format B has "DESCRIPTION" in column 1; Format A has a numeric-looking amount there
+  const isFormatB = firstRow[1] === 'DESCRIPTION' || firstRow[2] === 'AMOUNT';
+
   for (const row of rows) {
-    const dateStr = (row[0] ?? '').replace(/"/g, '');
-    const amtStr  = (row[1] ?? '').replace(/[",]/g, '');
-    const desc    = (row[4] ?? row[3] ?? row[2] ?? '').replace(/"/g, '').trim();
+    const dateStr = (row[0] ?? '').replace(/"/g, '').trim();
+
+    // Skip header rows
+    if (dateStr.toUpperCase() === 'DATE' || dateStr.toUpperCase() === 'TRANS DATE') continue;
+    if (!dateStr) continue;
+
+    let amtStr: string;
+    let desc: string;
+
+    if (isFormatB) {
+      // Format B: DATE(0), DESCRIPTION(1), AMOUNT(2), CHECK#(3), STATUS(4)
+      desc   = (row[1] ?? '').replace(/"/g, '').trim();
+      amtStr = (row[2] ?? '').replace(/[",]/g, '').trim();
+    } else {
+      // Format A: DATE(0), AMOUNT(1), *(2), *(3), DESCRIPTION(4)
+      amtStr = (row[1] ?? '').replace(/[",]/g, '').trim();
+      desc   = (row[4] ?? row[3] ?? row[2] ?? '').replace(/"/g, '').trim();
+    }
 
     const amount = parseFloat(amtStr);
-    if (isNaN(amount) || !dateStr || dateStr.toLowerCase() === 'date') continue;
+    if (isNaN(amount)) continue;
 
     const parsedDate = parseDate(dateStr);
     if (!parsedDate) continue;
@@ -42,6 +111,7 @@ export function parseWellsFargo(csv: string): ParsedTransaction[] {
       description: desc,
       amount: Math.abs(amount),
       type: amount < 0 ? 'debit' : 'credit',
+      ...(isTransferDescription(desc) ? { category: 'Transfer' } : {}),
     });
   }
   return out;
@@ -64,6 +134,9 @@ export function parseAppleCard(csv: string): ParsedTransaction[] {
         description: r['Description'] ?? r['Merchant'] ?? '',
         amount: Math.abs(amount),
         type: (isPayment ? 'credit' : 'debit') as 'debit' | 'credit',
+        // A payment to the card is you paying it off from another account —
+        // a transfer, not income.
+        ...(isPayment ? { category: 'Transfer' } : {}),
       });
       return acc;
     }, []);
@@ -80,11 +153,16 @@ export function parseDiscover(csv: string): ParsedTransaction[] {
       if (!parsedDate) return acc;
       const amount = parseFloat((r['Amount'] ?? '0').replace(',', ''));
       if (isNaN(amount)) return acc;
+      // Discover: positive amount = purchase (debit), negative = payment/credit.
+      const desc      = r['Description'] ?? '';
+      const isPayment = amount < 0 && /PAYMENT|DIRECTPAY|THANK\s*YOU/i.test(desc);
       acc.push({
         date: parsedDate,
-        description: r['Description'] ?? '',
+        description: desc,
         amount: Math.abs(amount),
         type: (amount > 0 ? 'debit' : 'credit') as 'debit' | 'credit',
+        // Paying off the Discover card is a transfer, not income.
+        ...(isPayment ? { category: 'Transfer' } : {}),
       });
       return acc;
     }, []);

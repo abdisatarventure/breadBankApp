@@ -36,8 +36,19 @@ BEGIN
     ('Income',           'payments',            '#4ADE80', 1),
     ('Personal Care',    'face',                '#A78BFA', 1),
     ('Education',        'school',              '#60A5FA', 1),
+    ('Transfer',         'swap_horiz',          '#64748B', 1),
     ('Unknown',          'help_outline',        '#6E6E9A', 1);
     PRINT 'Categories seeded.';
+END
+
+-- Ensure the Transfer category exists even on databases seeded before it
+-- was added (used to flag credit-card payments and internal transfers,
+-- which are excluded from income/spending totals).
+IF NOT EXISTS (SELECT 1 FROM categories WHERE name = 'Transfer')
+BEGIN
+    INSERT INTO categories (name, icon, color, is_system)
+    VALUES ('Transfer', 'swap_horiz', '#64748B', 1);
+    PRINT 'Transfer category added.';
 END
 
 PRINT 'Seed data complete.';

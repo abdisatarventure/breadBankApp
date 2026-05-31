@@ -8,7 +8,8 @@ const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const CATEGORIES = [
   'Food & Dining', 'Groceries', 'Housing', 'Transportation',
   'Entertainment', 'Subscriptions', 'Shopping', 'Health & Medical',
-  'Travel', 'Investments', 'Income', 'Personal Care', 'Education', 'Unknown',
+  'Travel', 'Investments', 'Income', 'Personal Care', 'Education',
+  'Transfer', 'Unknown',
 ];
 
 // ── Categorize transactions ────────────────────────────────────────
@@ -16,14 +17,21 @@ const CATEGORIES = [
 interface TxInput { description: string; amount: number; }
 interface CatResult { index: number; category: string; merchant: string; }
 
-export async function categorizeTransactions(txs: TxInput[]): Promise<CatResult[]> {
+export async function categorizeTransactions(txs: TxInput[], accountType?: string): Promise<CatResult[]> {
   if (txs.length === 0) return [];
+
+  const accountNote = accountType === 'credit'
+    ? '\nNOTE: These are CREDIT-CARD transactions. A positive amount / payment toward the card is you paying off the card from another account → Transfer (NOT Income).'
+    : '';
 
   const prompt = `You are a personal finance categorizer. Assign each transaction to one category from this list:
 ${CATEGORIES.join(', ')}
-
+${accountNote}
 Rules:
-- Positive amount + "DIRECT DEP" / "PAYROLL" / "ACH CREDIT" / "TRANSFER IN" → Income
+- "Transfer" means money moving between your OWN accounts — it is NOT income or spending. Use it for:
+    • Credit-card payments: "APPLECARD GSBANK PAYMENT", "DISCOVER E-PAYMENT", "CREDIT CARD PAYMENT", "AMEX EPAYMENT", any "... CARD PAYMENT"
+    • Internal bank transfers: "ONLINE TRANSFER TO/FROM ... SAVINGS/CHECKING", "APPLE CASH BANK XFER", "APPLE CASH SENT"
+- Real income (Income) = paychecks/deposits from someone else: "PAYROLL", "DIRECT DEP", "ACH CREDIT", tax refunds ("IRS TREAS", "TAXRFD"). Do NOT mark card payments or self-transfers as Income.
 - Netflix, Spotify, Hulu, Apple One, gym memberships → Subscriptions
 - Whole Foods, Trader Joe's, grocery stores → Groceries (not Food & Dining)
 - Restaurants, fast food, coffee shops → Food & Dining

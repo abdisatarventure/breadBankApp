@@ -29,26 +29,29 @@ router.post('/summary', async (req, res) => {
     const [cur, prev, topCat, topMerch, subs, cats] = await Promise.all([
       pool.request().input('s', sql.Date, start).input('e', sql.Date, end).query(`
         SELECT
-          SUM(CASE WHEN type='debit'  THEN amount ELSE 0 END) AS spending,
-          SUM(CASE WHEN type='credit' THEN amount ELSE 0 END) AS income
-        FROM transactions WHERE date BETWEEN @s AND @e
+          SUM(CASE WHEN t.type='debit'  THEN t.amount ELSE 0 END) AS spending,
+          SUM(CASE WHEN t.type='credit' THEN t.amount ELSE 0 END) AS income
+        FROM transactions t LEFT JOIN categories c ON t.category_id = c.id
+        WHERE t.date BETWEEN @s AND @e AND ISNULL(c.name,'') <> 'Transfer'
       `),
       pool.request().input('s', sql.Date, prevStart).input('e', sql.Date, prevEnd).query(`
-        SELECT SUM(CASE WHEN type='debit' THEN amount ELSE 0 END) AS spending
-        FROM transactions WHERE date BETWEEN @s AND @e
+        SELECT SUM(CASE WHEN t.type='debit' THEN t.amount ELSE 0 END) AS spending
+        FROM transactions t LEFT JOIN categories c ON t.category_id = c.id
+        WHERE t.date BETWEEN @s AND @e AND ISNULL(c.name,'') <> 'Transfer'
       `),
       pool.request().input('s', sql.Date, start).input('e', sql.Date, end).query(`
         SELECT TOP 1 c.name, SUM(t.amount) AS total
         FROM transactions t JOIN categories c ON t.category_id = c.id
-        WHERE t.date BETWEEN @s AND @e AND t.type='debit'
+        WHERE t.date BETWEEN @s AND @e AND t.type='debit' AND c.name <> 'Transfer'
         GROUP BY c.name ORDER BY total DESC
       `),
       pool.request().input('s', sql.Date, start).input('e', sql.Date, end).query(`
-        SELECT TOP 1 merchant, SUM(amount) AS total
-        FROM transactions
-        WHERE date BETWEEN @s AND @e AND type='debit'
-          AND merchant IS NOT NULL AND merchant != ''
-        GROUP BY merchant ORDER BY total DESC
+        SELECT TOP 1 t.merchant, SUM(t.amount) AS total
+        FROM transactions t LEFT JOIN categories c ON t.category_id = c.id
+        WHERE t.date BETWEEN @s AND @e AND t.type='debit'
+          AND t.merchant IS NOT NULL AND t.merchant != ''
+          AND ISNULL(c.name,'') <> 'Transfer'
+        GROUP BY t.merchant ORDER BY total DESC
       `),
       pool.request().input('s', sql.Date, start).input('e', sql.Date, end).query(`
         SELECT COUNT(*) AS cnt, COALESCE(SUM(t.amount),0) AS total
@@ -58,7 +61,7 @@ router.post('/summary', async (req, res) => {
       pool.request().input('s', sql.Date, start).input('e', sql.Date, end).query(`
         SELECT c.name AS category, SUM(t.amount) AS amount
         FROM transactions t JOIN categories c ON t.category_id = c.id
-        WHERE t.date BETWEEN @s AND @e AND t.type='debit'
+        WHERE t.date BETWEEN @s AND @e AND t.type='debit' AND c.name <> 'Transfer'
         GROUP BY c.name ORDER BY amount DESC
       `),
     ]);
@@ -107,14 +110,15 @@ router.post('/chat', async (req, res) => {
     const [recent, topCats] = await Promise.all([
       pool.request().query(`
         SELECT
-          SUM(CASE WHEN type='debit'  THEN amount ELSE 0 END) AS spending,
-          SUM(CASE WHEN type='credit' THEN amount ELSE 0 END) AS income
-        FROM transactions WHERE date >= DATEADD(MONTH,-1,GETDATE())
+          SUM(CASE WHEN t.type='debit'  THEN t.amount ELSE 0 END) AS spending,
+          SUM(CASE WHEN t.type='credit' THEN t.amount ELSE 0 END) AS income
+        FROM transactions t LEFT JOIN categories c ON t.category_id = c.id
+        WHERE t.date >= DATEADD(MONTH,-1,GETDATE()) AND ISNULL(c.name,'') <> 'Transfer'
       `),
       pool.request().query(`
         SELECT TOP 5 c.name, SUM(t.amount) AS total
         FROM transactions t JOIN categories c ON t.category_id = c.id
-        WHERE t.date >= DATEADD(MONTH,-1,GETDATE()) AND t.type='debit'
+        WHERE t.date >= DATEADD(MONTH,-1,GETDATE()) AND t.type='debit' AND c.name <> 'Transfer'
         GROUP BY c.name ORDER BY total DESC
       `),
     ]);
