@@ -1,0 +1,635 @@
+From df3164284bcbee4a5615928f66893022859e2981 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sun, 31 May 2026 03:25:07 +0000
+Subject: [PATCH] Fix bugs, security issues, and missing features across
+ backend and frontend
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Backend:
+- Add JWT auth middleware and apply it to all protected routes (dashboard,
+  transactions, upload, categories, accounts, ai). Auth routes remain public.
+- Fix transactions COUNT query to apply the same WHERE filters as the
+  paginated query so totals are accurate when filtering.
+- Add limit/offset bounds validation (limit clamped 1–1000, offset >= 0).
+- Add bulk-categorize input validation (non-empty array, positive integer IDs).
+- Add category name validation (required, max 100 chars).
+- Add month (1–12) and year (2000–2100) validation to AI summary route.
+- Add CSV file type validation on upload (extension + MIME check).
+- Fix csvParser date validation: parseDate returns null on invalid dates and
+  all three parsers skip rows with unparseable dates instead of inserting
+  Invalid Date into the database.
+- Make CORS origin configurable via CORS_ORIGIN env var.
+
+Frontend:
+- Fix XSS in DashboardPage: sanitize AI summary text (escape HTML entities)
+  before converting **bold** markdown to <strong> tags.
+- Add error state display to DashboardPage (load error + AI summary error).
+- Fix "Forgot password?" dead link in LoginPage: shows a Quasar notification
+  instead of being a non-functional element.
+- Add user-facing error banner to TransactionsPage on fetch failure.
+- Add proper pagination to TransactionsPage (prev/next buttons, page X of Y,
+  50 rows per page with offset tracking). Filters and search reset to page 1.
+---
+ backend/src/index.ts                          | 24 ++++---
+ backend/src/middleware/auth.ts                | 34 ++++++++++
+ backend/src/routes/ai.ts                      | 17 +++--
+ backend/src/routes/categories.ts              | 14 +++-
+ backend/src/routes/transactions.ts            | 45 ++++++++++---
+ backend/src/routes/upload.ts                  |  9 ++-
+ backend/src/services/csvParser.ts             | 45 ++++++++-----
+ .../breadBank/src/pages/DashboardPage.vue     | 25 ++++++--
+ frontend/breadBank/src/pages/LoginPage.vue    | 13 +++-
+ .../breadBank/src/pages/TransactionsPage.vue  | 64 ++++++++++++++++++-
+ 10 files changed, 242 insertions(+), 48 deletions(-)
+ create mode 100644 backend/src/middleware/auth.ts
+
+diff --git a/backend/src/index.ts b/backend/src/index.ts
+index 40f1917..6eab416 100644
+--- a/backend/src/index.ts
++++ b/backend/src/index.ts
+@@ -2,6 +2,7 @@ import express from 'express';
+ import cors from 'cors';
+ import dotenv from 'dotenv';
+ import { connectDB } from './config/db';
++import { requireAuth } from './middleware/auth';
+ import dashboardRouter   from './routes/dashboard';
+ import transactionsRouter from './routes/transactions';
+ import uploadRouter      from './routes/upload';
+@@ -15,16 +16,23 @@ dotenv.config();
+ const app  = express();
+ const PORT = process.env.PORT ?? 3000;
+ 
+-app.use(cors({ origin: 'http://localhost:9000' }));
++const allowedOrigins = process.env.CORS_ORIGIN
++  ? process.env.CORS_ORIGIN.split(',')
++  : ['http://localhost:9000'];
++
++app.use(cors({ origin: allowedOrigins }));
+ app.use(express.json());
+ 
+-app.use('/api/dashboard',    dashboardRouter);
+-app.use('/api/transactions', transactionsRouter);
+-app.use('/api/upload',       uploadRouter);
+-app.use('/api/categories',   categoriesRouter);
+-app.use('/api/accounts',     accountsRouter);
+-app.use('/api/auth',         authRouter);
+-app.use('/api/ai',           aiRouter);
++// Public routes — no auth required
++app.use('/api/auth', authRouter);
++
++// Protected routes — valid JWT required
++app.use('/api/dashboard',    requireAuth, dashboardRouter);
++app.use('/api/transactions', requireAuth, transactionsRouter);
++app.use('/api/upload',       requireAuth, uploadRouter);
++app.use('/api/categories',   requireAuth, categoriesRouter);
++app.use('/api/accounts',     requireAuth, accountsRouter);
++app.use('/api/ai',           requireAuth, aiRouter);
+ 
+ app.get('/api/health', (_req, res) => {
+   res.json({ status: 'ok', timestamp: new Date().toISOString() });
+diff --git a/backend/src/middleware/auth.ts b/backend/src/middleware/auth.ts
+new file mode 100644
+index 0000000..e7a2cd1
+--- /dev/null
++++ b/backend/src/middleware/auth.ts
+@@ -0,0 +1,34 @@
++import { Request, Response, NextFunction } from 'express';
++import jwt from 'jsonwebtoken';
++import dotenv from 'dotenv';
++
++dotenv.config();
++
++const JWT_SECRET = process.env.JWT_SECRET ?? 'breadbank_dev_secret';
++
++if (!process.env.JWT_SECRET) {
++  console.warn('WARNING: JWT_SECRET env var not set — using insecure default. Set it in production.');
++}
++
++export interface AuthRequest extends Request {
++  userId?: number;
++  userEmail?: string;
++}
++
++export function requireAuth(req: AuthRequest, res: Response, next: NextFunction): void {
++  const authHeader = req.headers.authorization;
++  if (!authHeader?.startsWith('Bearer ')) {
++    res.status(401).json({ error: 'Unauthorized' });
++    return;
++  }
++
++  const token = authHeader.slice(7);
++  try {
++    const payload = jwt.verify(token, JWT_SECRET) as { userId: number; email: string };
++    req.userId = payload.userId;
++    req.userEmail = payload.email;
++    next();
++  } catch {
++    res.status(401).json({ error: 'Invalid or expired token' });
++  }
++}
+diff --git a/backend/src/routes/ai.ts b/backend/src/routes/ai.ts
+index 6c233ec..d9dc017 100644
+--- a/backend/src/routes/ai.ts
++++ b/backend/src/routes/ai.ts
+@@ -12,12 +12,19 @@ const router = Router();
+ router.post('/summary', async (req, res) => {
+   try {
+     const pool = getPool();
+-    const { month, year } = req.body as { month: number; year: number };
++    const { month, year } = req.body as { month: unknown; year: unknown };
+ 
+-    const start    = new Date(year, month - 1, 1);
+-    const end      = new Date(year, month, 0);
+-    const prevStart = new Date(year, month - 2, 1);
+-    const prevEnd   = new Date(year, month - 1, 0);
++    const m = Number(month);
++    const y = Number(year);
++    if (!Number.isInteger(m) || m < 1 || m > 12 || !Number.isInteger(y) || y < 2000 || y > 2100) {
++      res.status(400).json({ error: 'month must be 1–12 and year must be between 2000 and 2100' });
++      return;
++    }
++
++    const start    = new Date(y, m - 1, 1);
++    const end      = new Date(y, m, 0);
++    const prevStart = new Date(y, m - 2, 1);
++    const prevEnd   = new Date(y, m - 1, 0);
+ 
+     const [cur, prev, topCat, topMerch, subs, cats] = await Promise.all([
+       pool.request().input('s', sql.Date, start).input('e', sql.Date, end).query(`
+diff --git a/backend/src/routes/categories.ts b/backend/src/routes/categories.ts
+index 5df5896..636f088 100644
+--- a/backend/src/routes/categories.ts
++++ b/backend/src/routes/categories.ts
+@@ -21,9 +21,19 @@ router.get('/', async (_req, res) => {
+ 
+ router.post('/', async (req, res) => {
+   try {
+-    const { name, icon, color } = req.body as { name: string; icon?: string; color?: string };
++    const { name, icon, color } = req.body as { name?: string; icon?: string; color?: string };
++
++    if (!name || typeof name !== 'string' || !name.trim()) {
++      res.status(400).json({ error: 'Category name is required' });
++      return;
++    }
++    if (name.trim().length > 100) {
++      res.status(400).json({ error: 'Category name must be 100 characters or fewer' });
++      return;
++    }
++
+     const result = await getPool().request()
+-      .input('name',  sql.NVarChar(100), name)
++      .input('name',  sql.NVarChar(100), name.trim())
+       .input('icon',  sql.NVarChar(50),  icon  ?? 'label')
+       .input('color', sql.NVarChar(20),  color ?? '#6C4ED4')
+       .query(`
+diff --git a/backend/src/routes/transactions.ts b/backend/src/routes/transactions.ts
+index cf01e48..74787f6 100644
+--- a/backend/src/routes/transactions.ts
++++ b/backend/src/routes/transactions.ts
+@@ -9,9 +9,14 @@ router.get('/', async (req, res) => {
+     const pool = getPool();
+     const { category, account, search, startDate, endDate, limit = '100', offset = '0' } = req.query;
+ 
++    const rawLimit  = parseInt(limit  as string);
++    const rawOffset = parseInt(offset as string);
++    const safeLimit  = isNaN(rawLimit)  || rawLimit  < 1 ? 100 : Math.min(rawLimit,  1000);
++    const safeOffset = isNaN(rawOffset) || rawOffset < 0 ? 0   : rawOffset;
++
+     const request = pool.request()
+-      .input('lim',    sql.Int, parseInt(limit  as string))
+-      .input('off',    sql.Int, parseInt(offset as string));
++      .input('lim',    sql.Int, safeLimit)
++      .input('off',    sql.Int, safeOffset);
+ 
+     let where = 'WHERE 1=1';
+ 
+@@ -50,9 +55,20 @@ router.get('/', async (req, res) => {
+       OFFSET @off ROWS FETCH NEXT @lim ROWS ONLY
+     `);
+ 
+-    const countRes = await pool.request().query(
+-      `SELECT COUNT(*) AS total FROM transactions`
+-    );
++    const countReq = pool.request();
++    if (category)  countReq.input('category',  sql.NVarChar(100), category as string);
++    if (account)   countReq.input('accountId', sql.Int,           parseInt(account as string));
++    if (search)    countReq.input('search',    sql.NVarChar(500), `%${search}%`);
++    if (startDate) countReq.input('startDate', sql.Date,          new Date(startDate as string));
++    if (endDate)   countReq.input('endDate',   sql.Date,          new Date(endDate   as string));
++
++    const countRes = await countReq.query(`
++      SELECT COUNT(*) AS total
++      FROM transactions t
++      LEFT JOIN categories c ON t.category_id = c.id
++      LEFT JOIN accounts   a ON t.account_id  = a.id
++      ${where}
++    `);
+ 
+     res.json({
+       transactions: result.recordset,
+@@ -110,16 +126,27 @@ router.put('/:id', async (req, res) => {
+ router.put('/bulk/categorize', async (req, res) => {
+   try {
+     const pool = getPool();
+-    const { ids, categoryId } = req.body as { ids: number[]; categoryId: number };
++    const { ids, categoryId } = req.body as { ids: unknown; categoryId: unknown };
++
++    if (!Array.isArray(ids) || ids.length === 0 || !Number.isInteger(categoryId) || (categoryId as number) < 1) {
++      res.status(400).json({ error: 'ids must be a non-empty array and categoryId must be a valid integer' });
++      return;
++    }
++
++    const safeIds = (ids as unknown[]).filter(id => Number.isInteger(id) && (id as number) > 0) as number[];
++    if (safeIds.length === 0) {
++      res.status(400).json({ error: 'No valid transaction ids provided' });
++      return;
++    }
+ 
+-    for (const id of ids) {
++    for (const id of safeIds) {
+       await pool.request()
+         .input('id',         sql.Int, id)
+-        .input('categoryId', sql.Int, categoryId)
++        .input('categoryId', sql.Int, categoryId as number)
+         .query(`UPDATE transactions SET category_id = @categoryId WHERE id = @id`);
+     }
+ 
+-    res.json({ success: true, updated: ids.length });
++    res.json({ success: true, updated: safeIds.length });
+   } catch (err) {
+     console.error(err);
+     res.status(500).json({ error: 'Bulk update failed' });
+diff --git a/backend/src/routes/upload.ts b/backend/src/routes/upload.ts
+index 8675976..9d4874b 100644
+--- a/backend/src/routes/upload.ts
++++ b/backend/src/routes/upload.ts
+@@ -11,10 +11,17 @@ const storage = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10
+ router.post('/', storage.single('file'), async (req: Request, res: Response) => {
+   if (!req.file) { res.status(400).json({ error: 'No file uploaded' }); return; }
+ 
++  const originalName = req.file.originalname.toLowerCase();
++  const allowedMimes = ['text/csv', 'text/plain', 'application/csv', 'application/vnd.ms-excel'];
++  if (!originalName.endsWith('.csv') && !allowedMimes.includes(req.file.mimetype)) {
++    res.status(400).json({ error: 'Only CSV files are accepted' });
++    return;
++  }
++
+   const accountId   = parseInt(req.body.accountId   as string);
+   const accountType = req.body.accountType as string;
+ 
+-  if (!accountId || !accountType) {
++  if (!accountId || isNaN(accountId) || !accountType) {
+     res.status(400).json({ error: 'accountId and accountType are required' });
+     return;
+   }
+diff --git a/backend/src/services/csvParser.ts b/backend/src/services/csvParser.ts
+index 960d291..33f415c 100644
+--- a/backend/src/services/csvParser.ts
++++ b/backend/src/services/csvParser.ts
+@@ -7,14 +7,18 @@ export interface ParsedTransaction {
+   type: 'debit' | 'credit';
+ }
+ 
+-function parseDate(raw: string): Date {
++function parseDate(raw: string): Date | null {
+   const s = raw.replace(/"/g, '').trim();
++  if (!s) return null;
+   const parts = s.split('/');
++  let d: Date;
+   if (parts.length === 3) {
+-    const [m, d, y] = parts;
+-    return new Date(Number(y), Number(m) - 1, Number(d));
++    const [m, day, y] = parts;
++    d = new Date(Number(y), Number(m) - 1, Number(day));
++  } else {
++    d = new Date(s);
+   }
+-  return new Date(s);
++  return isNaN(d.getTime()) ? null : d;
+ }
+ 
+ // Wells Fargo: "Date","Amount","*","*","Description"
+@@ -30,8 +34,11 @@ export function parseWellsFargo(csv: string): ParsedTransaction[] {
+     const amount = parseFloat(amtStr);
+     if (isNaN(amount) || !dateStr || dateStr.toLowerCase() === 'date') continue;
+ 
++    const parsedDate = parseDate(dateStr);
++    if (!parsedDate) continue;
++
+     out.push({
+-      date: parseDate(dateStr),
++      date: parsedDate,
+       description: desc,
+       amount: Math.abs(amount),
+       type: amount < 0 ? 'debit' : 'credit',
+@@ -46,16 +53,20 @@ export function parseAppleCard(csv: string): ParsedTransaction[] {
+ 
+   return rows
+     .filter(r => r['Transaction Date'] && r['Amount (USD)'])
+-    .map(r => {
++    .reduce<ParsedTransaction[]>((acc, r) => {
++      const parsedDate = parseDate(r['Transaction Date'] ?? '');
++      if (!parsedDate) return acc;
+       const amount = parseFloat((r['Amount (USD)'] ?? '0').replace(',', ''));
++      if (isNaN(amount)) return acc;
+       const isPayment = (r['Type'] ?? '').toLowerCase() === 'payment';
+-      return {
+-        date: parseDate(r['Transaction Date'] ?? ''),
++      acc.push({
++        date: parsedDate,
+         description: r['Description'] ?? r['Merchant'] ?? '',
+         amount: Math.abs(amount),
+         type: (isPayment ? 'credit' : 'debit') as 'debit' | 'credit',
+-      };
+-    });
++      });
++      return acc;
++    }, []);
+ }
+ 
+ // Discover: Trans. Date, Post Date, Description, Amount, Category
+@@ -64,15 +75,19 @@ export function parseDiscover(csv: string): ParsedTransaction[] {
+ 
+   return rows
+     .filter(r => (r['Trans. Date'] ?? r['Transaction Date']) && r['Amount'])
+-    .map(r => {
++    .reduce<ParsedTransaction[]>((acc, r) => {
++      const parsedDate = parseDate(r['Trans. Date'] ?? r['Transaction Date'] ?? '');
++      if (!parsedDate) return acc;
+       const amount = parseFloat((r['Amount'] ?? '0').replace(',', ''));
+-      return {
+-        date: parseDate(r['Trans. Date'] ?? r['Transaction Date'] ?? ''),
++      if (isNaN(amount)) return acc;
++      acc.push({
++        date: parsedDate,
+         description: r['Description'] ?? '',
+         amount: Math.abs(amount),
+         type: (amount > 0 ? 'debit' : 'credit') as 'debit' | 'credit',
+-      };
+-    });
++      });
++      return acc;
++    }, []);
+ }
+ 
+ export function parseCSV(csv: string, accountType: string): ParsedTransaction[] {
+diff --git a/frontend/breadBank/src/pages/DashboardPage.vue b/frontend/breadBank/src/pages/DashboardPage.vue
+index 44b67e7..537f321 100644
+--- a/frontend/breadBank/src/pages/DashboardPage.vue
++++ b/frontend/breadBank/src/pages/DashboardPage.vue
+@@ -13,7 +13,12 @@
+       <span>Loading your finances...</span>
+     </div>
+ 
+-    <template v-else>
++    <!-- Load error -->
++    <q-banner v-else-if="loadError" class="bb-error-banner q-mb-lg" dense type="negative" rounded>
++      {{ loadError }}
++    </q-banner>
++
++    <template v-else-if="!loadError">
+ 
+       <!-- AI Summary + Suggestions -->
+       <div class="row q-col-gutter-md q-mb-lg">
+@@ -38,6 +43,9 @@
+               />
+             </div>
+             <p v-if="aiSummary" class="bb-ai-text" v-html="formatBold(aiSummary)" />
++            <p v-else-if="aiError" class="bb-ai-text bb-ai-placeholder" style="color:#EF4444">
++              {{ aiError }}
++            </p>
+             <p v-else class="bb-ai-text bb-ai-placeholder">
+               Click Generate to get your AI-powered monthly summary
+             </p>
+@@ -188,7 +196,9 @@ const now = new Date();
+ const currentMonth = now.toLocaleString('default', { month: 'long', year: 'numeric' });
+ 
+ const loading    = ref(true);
++const loadError  = ref('');
+ const aiLoading  = ref(false);
++const aiError    = ref('');
+ const dash       = ref<DashboardData | null>(null);
+ const accounts   = ref<{ balance: number }[]>([]);
+ const aiSummary  = ref('');
+@@ -215,16 +225,22 @@ function fmt(val: number) {
+ }
+ 
+ function formatBold(text: string) {
+-  return text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
++  const escaped = text
++    .replace(/&/g, '&amp;')
++    .replace(/</g, '&lt;')
++    .replace(/>/g, '&gt;');
++  return escaped.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+ }
+ 
+ async function loadAiSummary() {
+   aiLoading.value = true;
++  aiError.value   = '';
+   try {
+     const result = await api.getAiSummary(now.getMonth() + 1, now.getFullYear());
+-    aiSummary.value      = result.summary;
+-    aiSuggestions.value  = result.suggestions;
++    aiSummary.value     = result.summary;
++    aiSuggestions.value = result.suggestions;
+   } catch (e) {
++    aiError.value = e instanceof Error ? e.message : 'Failed to generate summary';
+     console.error(e);
+   } finally {
+     aiLoading.value = false;
+@@ -240,6 +256,7 @@ onMounted(async () => {
+     dash.value     = dashData;
+     accounts.value = acctData;
+   } catch (e) {
++    loadError.value = e instanceof Error ? e.message : 'Failed to load dashboard';
+     console.error(e);
+   } finally {
+     loading.value = false;
+diff --git a/frontend/breadBank/src/pages/LoginPage.vue b/frontend/breadBank/src/pages/LoginPage.vue
+index 4ee3931..34ea74c 100644
+--- a/frontend/breadBank/src/pages/LoginPage.vue
++++ b/frontend/breadBank/src/pages/LoginPage.vue
+@@ -45,7 +45,7 @@
+           </template>
+         </q-input>
+ 
+-        <div class="bb-forgot q-mb-lg">Forgot password?</div>
++        <div class="bb-forgot q-mb-lg" @click="showForgotNotice">Forgot password?</div>
+ 
+         <q-btn
+           type="submit"
+@@ -71,6 +71,7 @@
+ <script setup lang="ts">
+ import { computed, ref } from 'vue';
+ import { useRouter } from 'vue-router';
++import { useQuasar } from 'quasar';
+ import { auth } from 'src/services/auth';
+ 
+ const email = ref('');
+@@ -79,6 +80,16 @@ const showPwd = ref(false);
+ const loading = ref(false);
+ const errorMessage = ref('');
+ const router = useRouter();
++const $q = useQuasar();
++
++function showForgotNotice() {
++  $q.notify({
++    message: 'Password reset is not yet available. Please contact your admin for help.',
++    color: 'purple-8',
++    position: 'top',
++    timeout: 4000,
++  });
++}
+ 
+ const emailIsValid = computed(() => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.value));
+ const canSubmit = computed(() => email.value.trim().length > 0 && password.value.trim().length > 0);
+diff --git a/frontend/breadBank/src/pages/TransactionsPage.vue b/frontend/breadBank/src/pages/TransactionsPage.vue
+index 9e83956..78c4f11 100644
+--- a/frontend/breadBank/src/pages/TransactionsPage.vue
++++ b/frontend/breadBank/src/pages/TransactionsPage.vue
+@@ -23,7 +23,7 @@
+         :options="['All Categories', ...categoryNames]"
+         dense outlined dark
+         class="bb-filter-select"
+-        @update:model-value="loadTransactions"
++        @update:model-value="() => { offset.value = 0; void loadTransactions(); }"
+       />
+       <q-btn no-caps flat label="Clear filters" size="sm" style="color:#6E6E9A" @click="clearFilters" />
+     </div>
+@@ -34,6 +34,11 @@
+       <span>Loading transactions...</span>
+     </div>
+ 
++    <!-- Error -->
++    <q-banner v-else-if="loadError" class="bb-error-banner q-mb-md" dense type="negative" rounded>
++      {{ loadError }}
++    </q-banner>
++
+     <!-- Empty -->
+     <div v-else-if="transactions.length === 0" class="bb-stub">
+       <q-icon name="receipt_long" size="52px" style="color:#6C4ED4" class="bb-stub-icon" />
+@@ -79,6 +84,23 @@
+       </div>
+     </div>
+ 
++    <!-- Pagination -->
++    <div v-if="!loading && !loadError && total > PAGE_SIZE" class="bb-pagination q-mt-md">
++      <q-btn
++        flat dense no-caps icon="chevron_left" label="Prev"
++        :disable="!hasPrev"
++        class="bb-page-btn"
++        @click="goToPrev"
++      />
++      <span class="bb-page-info">Page {{ currentPage }} of {{ totalPages }}</span>
++      <q-btn
++        flat dense no-caps icon-right="chevron_right" label="Next"
++        :disable="!hasNext"
++        class="bb-page-btn"
++        @click="goToNext"
++      />
++    </div>
++
+     <!-- Edit dialog -->
+     <q-dialog v-model="editOpen">
+       <div class="bb-edit-dialog">
+@@ -119,15 +141,24 @@
+ import { ref, computed, onMounted } from 'vue';
+ import { api, type Transaction, type Category } from 'src/services/api';
+ 
++const PAGE_SIZE = 50;
++
+ const transactions   = ref<Transaction[]>([]);
+ const categories     = ref<Category[]>([]);
+ const loading        = ref(true);
++const loadError      = ref('');
+ const total          = ref(0);
++const offset         = ref(0);
+ const search         = ref('');
+ const filterCategory = ref('All Categories');
+ 
+ let searchTimer: ReturnType<typeof setTimeout> | null = null;
+ 
++const currentPage  = computed(() => Math.floor(offset.value / PAGE_SIZE) + 1);
++const totalPages   = computed(() => Math.max(1, Math.ceil(total.value / PAGE_SIZE)));
++const hasPrev      = computed(() => offset.value > 0);
++const hasNext      = computed(() => offset.value + PAGE_SIZE < total.value);
++
+ const categoryNames = computed(() => categories.value.map(c => c.name));
+ const categoryOptions = computed(() => categories.value.map(c => ({ id: c.id, name: c.name, color: c.color })));
+ 
+@@ -146,8 +177,9 @@ function fmtDate(iso: string) {
+ 
+ async function loadTransactions() {
+   loading.value = true;
++  loadError.value = '';
+   try {
+-    const params: Record<string, string> = { limit: '200' };
++    const params: Record<string, string> = { limit: String(PAGE_SIZE), offset: String(offset.value) };
+     if (search.value) params.search = search.value;
+     if (filterCategory.value !== 'All Categories') params.category = filterCategory.value;
+ 
+@@ -155,25 +187,43 @@ async function loadTransactions() {
+     transactions.value = res.transactions;
+     total.value        = res.total;
+   } catch (e) {
++    loadError.value = e instanceof Error ? e.message : 'Failed to load transactions';
+     console.error(e);
+   } finally {
+     loading.value = false;
+   }
+ }
+ 
++function goToPrev() {
++  if (!hasPrev.value) return;
++  offset.value = Math.max(0, offset.value - PAGE_SIZE);
++  void loadTransactions();
++}
++
++function goToNext() {
++  if (!hasNext.value) return;
++  offset.value += PAGE_SIZE;
++  void loadTransactions();
++}
++
+ function onSearchInput() {
+   if (searchTimer) clearTimeout(searchTimer);
+-  searchTimer = setTimeout(() => { void loadTransactions(); }, 400);
++  searchTimer = setTimeout(() => {
++    offset.value = 0;
++    void loadTransactions();
++  }, 400);
+ }
+ 
+ function clearSearch() {
+   search.value = '';
++  offset.value = 0;
+   void loadTransactions();
+ }
+ 
+ function clearFilters() {
+   search.value         = '';
+   filterCategory.value = 'All Categories';
++  offset.value         = 0;
+   void loadTransactions();
+ }
+ 
+@@ -271,6 +321,14 @@ onMounted(() => {
+ .bb-amt-credit { color: #22C55E !important; }
+ .bb-amt-debit  { color: #ffffff; }
+ 
++.bb-pagination {
++  display: flex; align-items: center; justify-content: center; gap: 16px;
++}
++.bb-page-btn  { color: #8B6FEC !important; font-size: 13px; }
++.bb-page-info { font-size: 13px; color: #6E6E9A; min-width: 100px; text-align: center; }
++
++.bb-error-banner { border-radius: 10px; }
++
+ .bb-edit-dialog {
+   background: #0F1030; border: 1px solid rgba(255,255,255,0.1);
+   border-radius: 16px; padding: 28px; min-width: 380px;
+-- 
+2.43.0
+

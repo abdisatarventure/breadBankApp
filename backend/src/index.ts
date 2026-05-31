@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { connectDB } from './config/db';
+import { requireAuth } from './middleware/auth';
 import dashboardRouter   from './routes/dashboard';
 import transactionsRouter from './routes/transactions';
 import uploadRouter      from './routes/upload';
@@ -9,28 +10,29 @@ import categoriesRouter  from './routes/categories';
 import accountsRouter    from './routes/accounts';
 import aiRouter          from './routes/ai';
 import authRouter        from './routes/auth';
-import { requireAuth }  from './middleware/auth';
 
 dotenv.config();
 
 const app  = express();
 const PORT = process.env.PORT ?? 3000;
 
-app.use(cors({ origin: 'http://localhost:9000' }));
+const allowedOrigins = process.env.CORS_ORIGIN
+  ? process.env.CORS_ORIGIN.split(',')
+  : ['http://localhost:9000'];
+
+app.use(cors({ origin: allowedOrigins }));
 app.use(express.json());
 
-// Public routes
-app.use('/api/auth',   authRouter);
-app.get('/api/health', (_req, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));
+// Public routes — no auth required
+app.use('/api/auth', authRouter);
 
-// All routes below require a valid JWT
-app.use(requireAuth);
-app.use('/api/dashboard',    dashboardRouter);
-app.use('/api/transactions', transactionsRouter);
-app.use('/api/upload',       uploadRouter);
-app.use('/api/categories',   categoriesRouter);
-app.use('/api/accounts',     accountsRouter);
-app.use('/api/ai',           aiRouter);
+// Protected routes — valid JWT required
+app.use('/api/dashboard',    requireAuth, dashboardRouter);
+app.use('/api/transactions', requireAuth, transactionsRouter);
+app.use('/api/upload',       requireAuth, uploadRouter);
+app.use('/api/categories',   requireAuth, categoriesRouter);
+app.use('/api/accounts',     requireAuth, accountsRouter);
+app.use('/api/ai',           requireAuth, aiRouter);
 
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
