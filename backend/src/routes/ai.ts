@@ -5,9 +5,45 @@ import {
   generateMonthlySummary,
   generateSuggestions,
   answerFinanceQuestion,
+  getAiStatus,
 } from '../services/aiService';
 
 const router = Router();
+
+// GET /api/ai/status — token usage, estimated spend, budget, and whether the
+// Anthropic credit balance has been exhausted. Powers the Settings warning.
+router.get('/status', async (_req: AuthRequest, res: Response) => {
+  try {
+    res.json(await getAiStatus());
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to load AI status' });
+  }
+});
+
+// PUT /api/ai/budget  { budget: number | null } — set/clear the monthly budget.
+router.put('/budget', async (req: AuthRequest, res: Response) => {
+  try {
+    const { budget } = req.body as { budget: unknown };
+    const value = budget === null || budget === '' ? null : Number(budget);
+    if (value !== null && (!Number.isFinite(value) || value < 0)) {
+      res.status(400).json({ error: 'budget must be a non-negative number or null' });
+      return;
+    }
+    await getPool().request()
+      .input('v', sql.NVarChar(50), value === null ? null : String(value))
+      .query(`
+        MERGE app_settings AS t
+        USING (SELECT 'ai_monthly_budget' AS setting_key) AS s ON t.setting_key = s.setting_key
+        WHEN MATCHED THEN UPDATE SET setting_value = @v
+        WHEN NOT MATCHED THEN INSERT (setting_key, setting_value) VALUES ('ai_monthly_budget', @v);
+      `);
+    res.json(await getAiStatus());
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to update budget' });
+  }
+});
 
 // POST /api/ai/summary  { month: 1-12, year: 2026 }
 router.post('/summary', async (req: AuthRequest, res: Response) => {

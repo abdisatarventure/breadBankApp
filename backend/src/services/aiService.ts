@@ -1,9 +1,108 @@
 import Anthropic from '@anthropic-ai/sdk';
 import dotenv from 'dotenv';
+import { getPool, sql } from '../config/db';
 
 dotenv.config();
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+// Approximate Claude Opus pricing ($ per token) — used only to estimate spend
+// for the credit warning, not for billing.
+const PRICE_PER_INPUT_TOKEN  = 15 / 1_000_000;
+const PRICE_PER_OUTPUT_TOKEN = 75 / 1_000_000;
+
+// Set when a Claude call fails because the account is out of credits; cleared
+// on the next successful call. Exposed via getAiStatus() for the Settings page.
+let creditExhaustedAt: Date | null = null;
+
+function isCreditError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  const status = (err as { status?: number })?.status;
+  return status === 402 || /credit balance is too low|insufficient (?:credit|funds|balance)|billing/i.test(msg);
+}
+
+function currentMonthKey(): string {
+  return new Date().toISOString().slice(0, 7); // 'YYYY-MM'
+}
+
+// Accumulate this month's token usage so Settings can estimate spend.
+async function recordUsage(inputTokens: number, outputTokens: number): Promise<void> {
+  try {
+    await getPool().request()
+      .input('m', sql.NVarChar(7), currentMonthKey())
+      .input('i', sql.BigInt, inputTokens)
+      .input('o', sql.BigInt, outputTokens)
+      .query(`
+        MERGE ai_usage AS t
+        USING (SELECT @m AS month_key) AS s ON t.month_key = s.month_key
+        WHEN MATCHED THEN UPDATE SET
+          input_tokens = t.input_tokens + @i, output_tokens = t.output_tokens + @o, updated_at = SYSUTCDATETIME()
+        WHEN NOT MATCHED THEN INSERT (month_key, input_tokens, output_tokens, updated_at)
+          VALUES (@m, @i, @o, SYSUTCDATETIME());
+      `);
+  } catch (e) {
+    // Usage tracking must never break an AI feature.
+    console.error('Failed to record AI usage:', e);
+  }
+}
+
+// Single choke point for every Claude call: records usage on success and flags
+// credit exhaustion on failure.
+async function callClaude(params: Anthropic.MessageCreateParamsNonStreaming): Promise<Anthropic.Message> {
+  try {
+    const resp = await anthropic.messages.create(params);
+    creditExhaustedAt = null;
+    await recordUsage(resp.usage.input_tokens, resp.usage.output_tokens);
+    return resp;
+  } catch (err) {
+    if (isCreditError(err)) creditExhaustedAt = new Date();
+    throw err;
+  }
+}
+
+export interface AiStatus {
+  monthKey: string;
+  inputTokens: number;
+  outputTokens: number;
+  estCostUsd: number;
+  monthlyBudgetUsd: number | null;
+  percentUsed: number | null;
+  creditExhausted: boolean;
+  creditExhaustedAt: string | null;
+  level: 'ok' | 'warning' | 'over' | 'exhausted';
+}
+
+export async function getAiStatus(): Promise<AiStatus> {
+  const monthKey = currentMonthKey();
+  const pool = getPool();
+
+  const usage = await pool.request().input('m', sql.NVarChar(7), monthKey)
+    .query(`SELECT input_tokens, output_tokens FROM ai_usage WHERE month_key = @m`);
+  const inputTokens  = Number((usage.recordset[0] as { input_tokens?: number } | undefined)?.input_tokens  ?? 0);
+  const outputTokens = Number((usage.recordset[0] as { output_tokens?: number } | undefined)?.output_tokens ?? 0);
+  const estCostUsd = inputTokens * PRICE_PER_INPUT_TOKEN + outputTokens * PRICE_PER_OUTPUT_TOKEN;
+
+  const budgetRow = await pool.request()
+    .query(`SELECT setting_value FROM app_settings WHERE setting_key = 'ai_monthly_budget'`);
+  const rawBudget = (budgetRow.recordset[0] as { setting_value?: string } | undefined)?.setting_value;
+  const monthlyBudgetUsd = rawBudget != null && rawBudget !== '' ? Number(rawBudget) : null;
+
+  const percentUsed = monthlyBudgetUsd && monthlyBudgetUsd > 0
+    ? (estCostUsd / monthlyBudgetUsd) * 100 : null;
+
+  let level: AiStatus['level'] = 'ok';
+  if (creditExhaustedAt) level = 'exhausted';
+  else if (percentUsed != null && percentUsed >= 100) level = 'over';
+  else if (percentUsed != null && percentUsed >= 80) level = 'warning';
+
+  return {
+    monthKey, inputTokens, outputTokens, estCostUsd,
+    monthlyBudgetUsd, percentUsed,
+    creditExhausted: creditExhaustedAt !== null,
+    creditExhaustedAt: creditExhaustedAt ? creditExhaustedAt.toISOString() : null,
+    level,
+  };
+}
 
 const CATEGORIES = [
   'Food & Dining', 'Groceries', 'Housing', 'Transportation',
@@ -45,7 +144,7 @@ Return ONLY a JSON array (no markdown, no explanation):
 Transactions:
 ${txs.map((t, i) => `${i}. "${t.description}" $${Math.abs(t.amount).toFixed(2)}`).join('\n')}`;
 
-  const response = await anthropic.messages.create({
+  const response = await callClaude({
     model: 'claude-opus-4-8',
     max_tokens: 2048,
     messages: [{ role: 'user', content: prompt }],
@@ -91,7 +190,7 @@ Data:
 - Subscriptions: ${data.subscriptionCount} active, $${data.subscriptionTotal.toFixed(2)}/mo
 - Savings rate: ${data.savingsRate.toFixed(0)}%`;
 
-  const response = await anthropic.messages.create({
+  const response = await callClaude({
     model: 'claude-opus-4-8',
     max_tokens: 300,
     messages: [{ role: 'user', content: prompt }],
@@ -117,7 +216,7 @@ Unused subscriptions: ${data.unusedSubscriptions.join(', ') || 'none'}
 Return ONLY a JSON array of 3 strings:
 ["suggestion 1","suggestion 2","suggestion 3"]`;
 
-  const response = await anthropic.messages.create({
+  const response = await callClaude({
     model: 'claude-opus-4-8',
     max_tokens: 400,
     messages: [{ role: 'user', content: prompt }],
@@ -135,7 +234,7 @@ Return ONLY a JSON array of 3 strings:
 // ── Natural language Q&A ───────────────────────────────────────────
 
 export async function answerFinanceQuestion(question: string, context: string): Promise<string> {
-  const response = await anthropic.messages.create({
+  const response = await callClaude({
     model: 'claude-opus-4-8',
     max_tokens: 500,
     messages: [{

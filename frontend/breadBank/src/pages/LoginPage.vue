@@ -278,20 +278,45 @@ async function handleLogin() {
 .bb-form { margin-top: 30px; }
 
 .bb-uinput {
-  margin-bottom: 22px;
+  margin-bottom: 16px;
 
   .q-field__control {
-    padding: 0;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.14);
-    transition: border-color 0.3s ease;
+    height: 52px;
+    padding: 0 14px;
+    background: rgba(255, 255, 255, 0.035);
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    border-radius: 12px;
+    transition: border-color 0.25s ease, background 0.25s ease, box-shadow 0.25s ease;
+    // Quasar draws its own underline via ::before/::after — hide it.
+    &::before, &::after { display: none; }
   }
-  .q-field__control:hover { border-bottom-color: rgba(255, 255, 255, 0.26); }
-  &.q-field--focused .q-field__control { border-bottom-color: #8B6FEC; }
+  .q-field__control:hover {
+    border-color: rgba(255, 255, 255, 0.2);
+    background: rgba(255, 255, 255, 0.055);
+  }
+  &.q-field--focused .q-field__control {
+    border-color: #8B6FEC;
+    background: rgba(139, 111, 236, 0.08);
+    box-shadow: 0 0 0 3px rgba(139, 111, 236, 0.18);
+  }
 
   .q-field__native { color: #F8FAFF; font-size: 14px; }
   .q-field__native::placeholder { color: #6E6E9A; }
   .q-field__append .q-icon { color: #6E6E9A; transition: color 0.3s ease; }
   &.q-field--focused .q-field__append .q-icon { color: #8B6FEC; }
+
+  // Stop Chrome/Safari autofill from painting the field a light colour and
+  // black text — keep it on-theme (dark fill, light text).
+  input:-webkit-autofill,
+  input:-webkit-autofill:hover,
+  input:-webkit-autofill:focus,
+  input:-webkit-autofill:active {
+    -webkit-text-fill-color: #F8FAFF !important;
+    -webkit-box-shadow: 0 0 0 1000px #181734 inset !important;
+    caret-color: #F8FAFF;
+    border-radius: 12px;
+    transition: background-color 9999s ease-out 0s;
+  }
 }
 
 .bb-login-btn {

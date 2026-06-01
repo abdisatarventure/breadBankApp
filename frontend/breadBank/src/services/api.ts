@@ -190,6 +190,18 @@ export interface AiSummary {
   suggestions: string[];
 }
 
+export interface AiStatus {
+  monthKey: string;
+  inputTokens: number;
+  outputTokens: number;
+  estCostUsd: number;
+  monthlyBudgetUsd: number | null;
+  percentUsed: number | null;
+  creditExhausted: boolean;
+  creditExhaustedAt: string | null;
+  level: 'ok' | 'warning' | 'over' | 'exhausted';
+}
+
 // ── API methods ────────────────────────────────────────────
 
 export const api = {
@@ -257,4 +269,7 @@ export const api = {
     request<AiSummary>('/ai/summary', { method: 'POST', body: JSON.stringify({ month, year }) }),
   askAi: (question: string) =>
     request<{ answer: string }>('/ai/chat', { method: 'POST', body: JSON.stringify({ question }) }),
+  getAiStatus: () => request<AiStatus>('/ai/status'),
+  setAiBudget: (budget: number | null) =>
+    request<AiStatus>('/ai/budget', { method: 'PUT', body: JSON.stringify({ budget }) }),
 };
