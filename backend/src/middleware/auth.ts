@@ -1,14 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
-import dotenv from 'dotenv';
-
-dotenv.config();
-
-const JWT_SECRET = process.env.JWT_SECRET ?? 'breadbank_dev_secret';
-
-if (!process.env.JWT_SECRET) {
-  console.warn('WARNING: JWT_SECRET env var not set — using insecure default. Set it in production.');
-}
+import { JWT_SECRET } from '../config/auth';
 
 export interface AuthRequest extends Request {
   userId?: number;

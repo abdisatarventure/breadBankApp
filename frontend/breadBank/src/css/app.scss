@@ -70,6 +70,43 @@ body.body--dark {
   }
 }
 
+// Shared dashboard/investments primitives — global so every lazy-loaded route
+// renders correctly on a direct visit, not only after the dashboard loads.
+.bb-loading {
+  display: flex; flex-direction: column; align-items: center;
+  justify-content: center; height: 300px; gap: 16px;
+  color: #6E6E9A; font-size: 14px;
+}
+
+.bb-no-data {
+  display: flex; flex-direction: column; align-items: center;
+  justify-content: center; padding: 60px 24px; gap: 10px;
+  background: #0F1030; border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 14px; text-align: center;
+}
+.bb-no-data-title { font-size: 16px; font-weight: 600; color: #ffffff; }
+.bb-no-data-sub   { font-size: 13px; color: #6E6E9A; max-width: 360px; }
+
+.bb-stat {
+  background: #0F1030; border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 14px; padding: 18px; height: 100%;
+  &--gradient { background: linear-gradient(145deg,#2D1A6E,#1A1040); border-color: rgba(108,78,212,0.25); }
+}
+.bb-stat-lbl {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 10px; font-weight: 600; letter-spacing: 0.7px;
+  text-transform: uppercase; color: #6E6E9A; margin-bottom: 8px;
+}
+.bb-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.bb-stat-val { font-size: 22px; font-weight: 700; color: #ffffff; letter-spacing: -0.5px; margin-bottom: 6px; }
+.bb-stat-row { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+.bb-stat-cmp { font-size: 11px; color: #6E6E9A; }
+
+.bb-chart-card { background: #0F1030; border: 1px solid rgba(255,255,255,0.07); border-radius: 14px; padding: 20px; }
+.bb-chart-hdr  { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 4px; }
+.bb-chart-title { font-size: 14px; font-weight: 600; color: #ffffff; margin-bottom: 2px; }
+.bb-chart-sub   { font-size: 12px; color: #6E6E9A; }
+
 .apexcharts-tooltip {
   background: #1A1A3E !important;
   border: 1px solid var(--bb-border) !important;

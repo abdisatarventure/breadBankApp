@@ -87,6 +87,11 @@ export interface Transaction {
   institution: string;
 }
 
+export interface TransactionMonth {
+  monthKey: string; // 'YYYY-MM'
+  count: number;
+}
+
 export interface Category {
   id: number;
   name: string;
@@ -94,6 +99,25 @@ export interface Category {
   color: string;
   is_system: boolean;
   transaction_count: number;
+}
+
+export interface Subscription {
+  merchant: string;
+  cadence: 'weekly' | 'biweekly' | 'monthly' | 'quarterly' | 'yearly';
+  averageAmount: number;
+  lastAmount: number;
+  monthlyCost: number;
+  occurrences: number;
+  lastChargeDate: string;
+  nextEstimatedDate: string;
+  category: string | null;
+  categoryColor: string | null;
+  confidence: 'high' | 'medium';
+}
+
+export interface SubscriptionsData {
+  subscriptions: Subscription[];
+  summary: { count: number; totalMonthly: number; totalYearly: number };
 }
 
 export interface Account {
@@ -105,6 +129,43 @@ export interface Account {
   // SUM(...) over an account with no transactions returns NULL, so the
   // balance can be null even though callers usually coalesce it to 0.
   balance: number | null;
+  // Real bank balance from Plaid, when the account is linked. Null for
+  // CSV-only accounts — fall back to the transaction-derived `balance`.
+  current_balance: number | null;
+}
+
+export interface PlaidLinkStatus {
+  linked: { institution: string; created_at: string }[];
+}
+
+export interface InvestmentAccount {
+  name: string;
+  institution: string;
+  value: number;
+}
+
+export interface Holding {
+  account: string;
+  name: string;
+  ticker: string | null;
+  type: string | null;
+  quantity: number;
+  price: number;
+  value: number;
+  costBasis: number | null;
+  gain: number | null;
+}
+
+export interface InvestmentsData {
+  summary: {
+    totalValue: number;
+    totalCostBasis: number;
+    totalGain: number;
+    gainPct: number;
+    holdingsCount: number;
+  };
+  accounts: InvestmentAccount[];
+  holdings: Holding[];
 }
 
 export interface UploadResult {
@@ -140,8 +201,11 @@ export const api = {
     const q = params ? '?' + new URLSearchParams(params).toString() : '';
     return request<{ transactions: Transaction[]; total: number }>(`/transactions${q}`);
   },
+  getTransactionMonths: () => request<TransactionMonth[]>('/transactions/months'),
   updateTransaction: (id: number, body: { categoryId?: number; notes?: string; merchant?: string }) =>
     request<{ success: boolean }>(`/transactions/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+  assignTransactionCategory: (id: number, categoryId: number) =>
+    request<{ success: boolean }>(`/transactions/${id}`, { method: 'PUT', body: JSON.stringify({ categoryId }) }),
   bulkCategorize: (ids: number[], categoryId: number) =>
     request<{ success: boolean; updated: number }>('/transactions/bulk/categorize', {
       method: 'PUT',
@@ -163,12 +227,30 @@ export const api = {
   getUnknownTransactions: () => request<Transaction[]>('/categories/unknown'),
   createCategory: (name: string, icon?: string, color?: string) =>
     request<Category>('/categories', { method: 'POST', body: JSON.stringify({ name, icon, color }) }),
+  deleteCategory: (id: number) =>
+    request<{ success: boolean }>(`/categories/${id}`, { method: 'DELETE' }),
+
+  // Subscriptions
+  getSubscriptions: () => request<SubscriptionsData>('/subscriptions'),
 
   // Reports
   getReports: () => request<ReportsData>('/reports'),
 
   // Accounts
   getAccounts: () => request<Account[]>('/accounts'),
+
+  // Plaid (bank linking)
+  getPlaidStatus: () => request<PlaidLinkStatus>('/plaid/status'),
+  createPlaidLinkToken: () =>
+    request<{ link_token: string }>('/plaid/link-token', { method: 'POST' }),
+  exchangePlaidToken: (publicToken: string) =>
+    request<{ success: boolean; institution: string; imported: number }>('/plaid/exchange', {
+      method: 'POST',
+      body: JSON.stringify({ public_token: publicToken }),
+    }),
+  syncPlaid: () =>
+    request<{ success: boolean; banks: number; imported: number }>('/plaid/sync', { method: 'POST' }),
+  getInvestments: () => request<InvestmentsData>('/plaid/investments'),
 
   // AI
   getAiSummary: (month: number, year: number) =>

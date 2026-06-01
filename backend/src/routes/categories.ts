@@ -51,6 +51,62 @@ router.post('/', async (req: AuthRequest, res: Response) => {
   }
 });
 
+// DELETE /api/categories/:id — remove a user's custom category
+// System categories (user_id IS NULL / is_system = 1) can't be deleted.
+// Any transactions or merchant rules pointing at it are moved back to
+// the shared 'Unknown' bucket so we never orphan a foreign key.
+router.delete('/:id', async (req: AuthRequest, res: Response) => {
+  try {
+    const id = parseInt(req.params.id ?? '0', 10);
+    if (!Number.isInteger(id) || id < 1) {
+      res.status(400).json({ error: 'Invalid category id' });
+      return;
+    }
+
+    const pool = getPool();
+
+    // Confirm the category exists, belongs to this user, and is deletable.
+    const owned = await pool.request()
+      .input('id', sql.Int, id)
+      .input('userId', sql.Int, req.userId)
+      .query(`SELECT is_system FROM categories WHERE id = @id AND user_id = @userId`);
+
+    if (owned.recordset.length === 0) {
+      res.status(404).json({ error: 'Category not found' });
+      return;
+    }
+    if (owned.recordset[0].is_system) {
+      res.status(403).json({ error: 'System categories cannot be deleted' });
+      return;
+    }
+
+    // Reassign affected transactions to the shared 'Unknown' category.
+    await pool.request()
+      .input('id', sql.Int, id)
+      .input('userId', sql.Int, req.userId)
+      .query(`
+        UPDATE transactions
+        SET category_id = (SELECT TOP 1 id FROM categories WHERE name = 'Unknown' ORDER BY user_id)
+        WHERE category_id = @id AND user_id = @userId
+      `);
+
+    // Drop any learned merchant rules that referenced this category.
+    await pool.request()
+      .input('id', sql.Int, id)
+      .input('userId', sql.Int, req.userId)
+      .query(`DELETE FROM merchant_rules WHERE category_id = @id AND user_id = @userId`);
+
+    await pool.request()
+      .input('id', sql.Int, id)
+      .input('userId', sql.Int, req.userId)
+      .query(`DELETE FROM categories WHERE id = @id AND user_id = @userId AND is_system = 0`);
+
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to delete category' });
+  }
+});
+
 // GET unknown transactions (needs manual categorization)
 router.get('/unknown', async (req: AuthRequest, res: Response) => {
   try {

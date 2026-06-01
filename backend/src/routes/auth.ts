@@ -1,14 +1,12 @@
 import { Router } from 'express';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
-import dotenv from 'dotenv';
 import { getPool, sql } from '../config/db';
-
-dotenv.config();
+import { JWT_SECRET, JWT_EXPIRES } from '../config/auth';
 
 const router = Router();
-const JWT_SECRET = process.env.JWT_SECRET ?? 'breadbank_dev_secret';
-const JWT_EXPIRES = '8h';
+const MIN_PASSWORD_LENGTH = 8;
+const BCRYPT_COST = 12;
 
 router.post('/register', async (req, res) => {
   try {
@@ -17,6 +15,11 @@ router.post('/register', async (req, res) => {
 
     if (!normalizedEmail || !password) {
       res.status(400).json({ error: 'Email and password are required.' });
+      return;
+    }
+
+    if (password.length < MIN_PASSWORD_LENGTH || password.length > 72) {
+      res.status(400).json({ error: `Password must be between ${MIN_PASSWORD_LENGTH} and 72 characters.` });
       return;
     }
 
@@ -30,7 +33,7 @@ router.post('/register', async (req, res) => {
       return;
     }
 
-    const passwordHash = await bcrypt.hash(password, 10);
+    const passwordHash = await bcrypt.hash(password, BCRYPT_COST);
     const result = await pool.request()
       .input('email', sql.NVarChar(200), normalizedEmail)
       .input('passwordHash', sql.NVarChar(200), passwordHash)

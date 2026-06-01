@@ -82,6 +82,26 @@ router.get('/', async (req: AuthRequest, res: Response) => {
   }
 });
 
+// GET /api/transactions/months — distinct months that have transactions,
+// newest first, with a count. Powers the "group by month" filter dropdown.
+router.get('/months', async (req: AuthRequest, res: Response) => {
+  try {
+    const result = await getPool().request()
+      .input('userId', sql.Int, req.userId)
+      .query(`
+        SELECT FORMAT(t.date, 'yyyy-MM') AS monthKey, COUNT(*) AS count
+        FROM transactions t
+        WHERE t.user_id = @userId
+        GROUP BY FORMAT(t.date, 'yyyy-MM')
+        ORDER BY monthKey DESC
+      `);
+    res.json(result.recordset);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to fetch transaction months' });
+  }
+});
+
 // PUT /api/transactions/bulk/categorize — bulk re-categorize
 // NOTE: must be registered BEFORE the dynamic '/:id' route, otherwise Express
 // matches "bulk" as an :id and this endpoint never runs.
@@ -123,9 +143,19 @@ router.put('/:id', async (req: AuthRequest, res: Response) => {
   try {
     const pool = getPool();
     const id = parseInt(req.params.id ?? '0');
-    const { categoryId, notes, merchant } = req.body as {
-      categoryId?: number; notes?: string; merchant?: string;
-    };
+    const rawCategoryId = (req.body as any)?.categoryId;
+    const categoryId = rawCategoryId !== undefined && rawCategoryId !== null
+      ? typeof rawCategoryId === 'object' && 'value' in rawCategoryId
+        ? Number((rawCategoryId as any).value)
+        : Number(rawCategoryId)
+      : null;
+
+    if (rawCategoryId !== undefined && rawCategoryId !== null && (Number.isNaN(categoryId) || !Number.isFinite(categoryId))) {
+      res.status(400).json({ error: 'categoryId must be a valid number' });
+      return;
+    }
+
+    const { notes, merchant } = req.body as { notes?: string; merchant?: string };
 
     const updateRes = await pool.request()
       .input('id',         sql.Int,            id)

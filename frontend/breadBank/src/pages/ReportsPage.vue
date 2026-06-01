@@ -64,8 +64,8 @@
                   <span>Last year</span>
                   <span>{{ fmt(yearOverview.priorYearTotal) }}</span>
                 </div>
-                <div class="bb-report-pill" :class="yearChangeClass">
-                  {{ yearChangeLabel }}
+                <div class="bb-report-pill" :class="yearChange.class">
+                  {{ yearChange.label }}
                 </div>
               </div>
               <q-separator spaced />
@@ -78,8 +78,8 @@
                   <span>Same month last year</span>
                   <span>{{ fmt(yearOverview.priorMonthTotal) }}</span>
                 </div>
-                <div class="bb-report-pill" :class="monthChangeClass">
-                  {{ monthChangeLabel }}
+                <div class="bb-report-pill" :class="monthChange.class">
+                  {{ monthChange.label }}
                 </div>
               </div>
             </div>
@@ -206,33 +206,36 @@ const categoryChartOptions = computed<ApexOptions>(() => ({
   colors: ['#6C4ED4', '#22C55E'],
 }));
 
-const yearChangeLabel = computed(() => {
-  const overview = yearOverview.value;
-  if (overview.priorYearTotal === 0) return 'No prior year comparison';
-  const diff = overview.currentYearTotal - overview.priorYearTotal;
-  const pct = (diff / overview.priorYearTotal) * 100;
-  return `${diff >= 0 ? '+' : ''}${pct.toFixed(1)}% vs last year`;
-});
+// Build a spend-comparison pill. For a spending metric, spending *more* is the
+// unfavourable direction (red); spending less is favourable (green).
+// When the prior period is zero or negligibly small, a percentage explodes into
+// a meaningless figure (e.g. +99506.9%), so we fall back to the dollar delta or
+// a plain "no comparison" message instead.
+function buildChange(current: number, prior: number, suffix: string) {
+  const diff = current - prior;
+  const cls = diff > 0 ? 'bb-pill-negative' : 'bb-pill-positive';
+  const signedDollar = `${diff >= 0 ? '+' : '-'}${fmt(Math.abs(diff))}`;
 
-const monthChangeLabel = computed(() => {
-  const overview = yearOverview.value;
-  if (overview.priorMonthTotal === 0) return 'No prior-month comparison';
-  const diff = overview.currentMonthTotal - overview.priorMonthTotal;
-  const pct = (diff / overview.priorMonthTotal) * 100;
-  return `${diff >= 0 ? '+' : ''}${pct.toFixed(1)}% vs last year`;
-});
+  if (prior <= 0) {
+    if (current <= 0) return { label: `No ${suffix} comparison`, class: 'bb-pill-neutral' };
+    return { label: `${signedDollar} ${suffix} (new)`, class: cls };
+  }
 
-const yearChangeClass = computed(() => {
-  return yearOverview.value.currentYearTotal >= yearOverview.value.priorYearTotal
-    ? 'bb-pill-positive'
-    : 'bb-pill-negative';
-});
+  const pct = (diff / prior) * 100;
+  // A prior base this small makes the percentage noise — show the dollar change.
+  if (Math.abs(pct) >= 1000) {
+    return { label: `${signedDollar} ${suffix}`, class: cls };
+  }
+  return { label: `${diff >= 0 ? '+' : ''}${pct.toFixed(1)}% ${suffix}`, class: cls };
+}
 
-const monthChangeClass = computed(() => {
-  return yearOverview.value.currentMonthTotal >= yearOverview.value.priorMonthTotal
-    ? 'bb-pill-positive'
-    : 'bb-pill-negative';
-});
+const yearChange = computed(() =>
+  buildChange(yearOverview.value.currentYearTotal, yearOverview.value.priorYearTotal, 'vs last year'),
+);
+
+const monthChange = computed(() =>
+  buildChange(yearOverview.value.currentMonthTotal, yearOverview.value.priorMonthTotal, 'vs same month last year'),
+);
 
 const biggestGainCategory = computed(() => {
   const trends = categoryTrends.value.slice().sort((a, b) => (b.thisYearTotal - b.lastYearTotal) - (a.thisYearTotal - a.lastYearTotal));
@@ -288,6 +291,7 @@ onMounted(loadReports);
 .bb-report-pill { display: inline-flex; padding: 8px 12px; border-radius: 999px; font-size: 12px; font-weight: 700; width: fit-content; }
 .bb-pill-positive { background: rgba(34, 197, 94, 0.16); color: #22C55E; }
 .bb-pill-negative { background: rgba(239, 68, 68, 0.16); color: #EF4444; }
+.bb-pill-neutral { background: rgba(143, 143, 181, 0.16); color: #8F8FB5; }
 .bb-report-trends { display: grid; gap: 16px; }
 .bb-trend-row { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
 .bb-trend-label { color: #E2E2FF; font-weight: 600; }

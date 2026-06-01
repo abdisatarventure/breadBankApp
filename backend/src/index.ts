@@ -1,6 +1,8 @@
 import http from 'http';
 import express from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
 import dotenv from 'dotenv';
 import { connectDB } from './config/db';
 import { requireAuth } from './middleware/auth';
@@ -9,9 +11,11 @@ import reportsRouter     from './routes/reports';
 import transactionsRouter from './routes/transactions';
 import uploadRouter      from './routes/upload';
 import categoriesRouter  from './routes/categories';
+import subscriptionsRouter from './routes/subscriptions';
 import accountsRouter    from './routes/accounts';
 import aiRouter          from './routes/ai';
 import authRouter        from './routes/auth';
+import plaidRouter       from './routes/plaid';
 
 dotenv.config();
 
@@ -23,11 +27,29 @@ const allowedOrigins = process.env.CORS_ORIGIN
   ? process.env.CORS_ORIGIN.split(',')
   : ['http://localhost:9000'];
 
+app.use(helmet());
 app.use(cors({ origin: allowedOrigins }));
-app.use(express.json());
+app.use(express.json({ limit: '1mb' }));
+
+// Brute-force / credential-stuffing protection on auth, plus a generous
+// catch-all so a single client can't hammer the API.
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many attempts. Please try again later.' },
+});
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 1000,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use('/api', apiLimiter);
 
 // Public routes — no auth required
-app.use('/api/auth', authRouter);
+app.use('/api/auth', authLimiter, authRouter);
 
 // Protected routes — valid JWT required
 app.use('/api/dashboard',    requireAuth, dashboardRouter);
@@ -35,8 +57,10 @@ app.use('/api/reports',      requireAuth, reportsRouter);
 app.use('/api/transactions', requireAuth, transactionsRouter);
 app.use('/api/upload',       requireAuth, uploadRouter);
 app.use('/api/categories',   requireAuth, categoriesRouter);
+app.use('/api/subscriptions', requireAuth, subscriptionsRouter);
 app.use('/api/accounts',     requireAuth, accountsRouter);
 app.use('/api/ai',           requireAuth, aiRouter);
+app.use('/api/plaid',        requireAuth, plaidRouter);
 
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });

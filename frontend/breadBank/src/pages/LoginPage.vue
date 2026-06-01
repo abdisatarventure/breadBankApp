@@ -1,68 +1,88 @@
 <template>
-  <div class="bb-login-page flex flex-center">
-    <div class="bb-login-card">
+  <div class="bb-login-page">
+    <div class="bb-login-shell">
 
-      <!-- Logo -->
-      <div class="bb-login-logo">
-        <div class="bb-login-logo-icon">
-          <q-icon name="account_balance_wallet" size="26px" color="white" />
+      <!-- Animated visual panel -->
+      <div class="bb-login-art">
+        <div class="bb-orbs">
+          <span class="bb-orb bb-orb--1"></span>
+          <span class="bb-orb bb-orb--2"></span>
+          <span class="bb-orb bb-orb--3"></span>
+          <span class="bb-orb bb-orb--4"></span>
+          <span class="bb-orb bb-orb--5"></span>
+          <span class="bb-orb bb-orb--ring"></span>
         </div>
-        <span>BreadBank</span>
+
+        <div class="bb-art-content">
+          <div class="bb-brand">
+            <div class="bb-brand-icon">
+              <q-icon name="account_balance_wallet" size="22px" color="white" />
+            </div>
+            <span>BreadBank</span>
+          </div>
+          <div class="bb-art-copy">
+            <div class="bb-art-title">Smarter money,<br />beautifully simple.</div>
+            <div class="bb-art-sub">AI-powered insight into every dollar you spend.</div>
+          </div>
+        </div>
       </div>
 
-      <div class="bb-login-title">Sign in to your account</div>
-      <div class="bb-login-sub">Track your spending with AI-powered insights</div>
+      <!-- Form panel -->
+      <div class="bb-login-form">
+        <div class="bb-form-inner">
+          <div class="bb-login-title">Login</div>
+          <div class="bb-login-sub">Welcome back — sign in to continue</div>
 
-      <q-form class="q-mt-lg" @submit.prevent="handleLogin">
-        <q-banner v-if="errorMessage" class="bb-error-banner" dense type="negative">
-          {{ errorMessage }}
-        </q-banner>
+          <q-form class="bb-form" @submit.prevent="handleLogin">
+            <q-banner v-if="errorMessage" class="bb-error-banner q-mb-md" dense rounded>
+              {{ errorMessage }}
+            </q-banner>
 
-        <div class="bb-field-label">Email</div>
-        <q-input
-          v-model="email"
-          type="email"
-          placeholder="you@example.com"
-          outlined dense dark
-          class="bb-input q-mb-md"
-        />
+            <q-input
+              v-model="email"
+              type="email"
+              placeholder="Email"
+              borderless dark
+              class="bb-uinput"
+            >
+              <template #append>
+                <q-icon name="mail_outline" size="18px" />
+              </template>
+            </q-input>
 
-        <div class="bb-field-label">Password</div>
-        <q-input
-          v-model="password"
-          :type="showPwd ? 'text' : 'password'"
-          placeholder="••••••••"
-          outlined dense dark
-          class="bb-input q-mb-xs"
-        >
-          <template #append>
-            <q-icon
-              :name="showPwd ? 'visibility_off' : 'visibility'"
-              class="cursor-pointer"
-              style="color: #6E6E9A"
-              @click="showPwd = !showPwd"
+            <q-input
+              v-model="password"
+              :type="showPwd ? 'text' : 'password'"
+              placeholder="Password"
+              borderless dark
+              class="bb-uinput"
+            >
+              <template #append>
+                <q-icon
+                  :name="showPwd ? 'visibility_off' : 'lock_outline'"
+                  size="18px"
+                  class="cursor-pointer"
+                  @click="showPwd = !showPwd"
+                />
+              </template>
+            </q-input>
+
+            <q-btn
+              type="submit"
+              no-caps unelevated
+              label="Login"
+              class="bb-login-btn"
+              :loading="loading"
+              :disable="!canSubmit || loading"
             />
-          </template>
-        </q-input>
 
-        <div class="bb-forgot q-mb-lg" @click="showForgotNotice">Forgot password?</div>
-
-        <q-btn
-          type="submit"
-          no-caps unelevated
-          label="Sign In"
-          class="bb-login-btn full-width q-mb-md"
-          :loading="loading"
-          :disable="!canSubmit || loading"
-        />
-
-        <div class="bb-divider"><span>or</span></div>
-
-        <div class="text-center q-mt-md">
-          <span class="bb-signup-txt">Don't have an account? </span>
-          <span class="bb-signup-link" @click="router.push('/register')">Create one</span>
+            <div class="bb-form-links">
+              <span class="bb-link" @click="router.push('/register')">Create an account</span>
+              <span class="bb-link" @click="showForgotNotice">Forgot your password?</span>
+            </div>
+          </q-form>
         </div>
-      </q-form>
+      </div>
 
     </div>
   </div>
@@ -111,6 +131,8 @@ async function handleLogin() {
 
   try {
     await auth.login(email.value, password.value);
+    // Tell the dashboard to pull fresh bank data once, on this login.
+    sessionStorage.setItem('bb_sync_on_login', '1');
     await router.push('/app/dashboard');
   } catch (err) {
     errorMessage.value = err instanceof Error ? err.message : 'Login failed. Please try again.';
@@ -122,120 +144,208 @@ async function handleLogin() {
 
 <style lang="scss">
 .bb-login-page {
-  background: #0A0A1B;
   min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background:
+    radial-gradient(1200px 600px at 15% 10%, rgba(108, 78, 212, 0.18), transparent 60%),
+    radial-gradient(900px 500px at 90% 90%, rgba(224, 64, 251, 0.14), transparent 60%),
+    #070714;
 }
 
-.bb-login-card {
+.bb-login-shell {
+  display: flex;
   width: 100%;
-  max-width: 400px;
-  background: #0F1030;
+  max-width: 920px;
+  min-height: 520px;
+  border-radius: 24px;
+  overflow: hidden;
+  background: #0F0F26;
   border: 1px solid rgba(255, 255, 255, 0.07);
-  border-radius: 18px;
-  padding: 40px 36px;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55);
+  animation: bb-shell-in 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
-.bb-login-logo {
+@keyframes bb-shell-in {
+  from { opacity: 0; transform: translateY(18px) scale(0.985); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* ── Visual panel ─────────────────────────────────────────── */
+.bb-login-art {
+  position: relative;
+  flex: 1 1 50%;
+  overflow: hidden;
+  background: linear-gradient(150deg, #241252 0%, #15103a 45%, #0a0a1f 100%);
+}
+
+.bb-orbs { position: absolute; inset: 0; }
+
+.bb-orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(14px);
+  opacity: 0.85;
+  will-change: transform;
+  mix-blend-mode: screen;
+}
+
+.bb-orb--1 {
+  width: 240px; height: 240px; top: 8%; left: 6%;
+  background: radial-gradient(circle at 32% 30%, #9b7bff, #6c4ed4 46%, transparent 72%);
+  animation: bb-float-1 15s ease-in-out infinite alternate;
+}
+.bb-orb--2 {
+  width: 200px; height: 200px; top: 44%; left: 36%;
+  background: radial-gradient(circle at 30% 30%, #ff7ce0, #e040fb 48%, transparent 72%);
+  animation: bb-float-2 19s ease-in-out infinite alternate;
+}
+.bb-orb--3 {
+  width: 170px; height: 170px; top: 60%; left: 4%;
+  background: radial-gradient(circle at 30% 30%, #7c6bff, #4f46e5 50%, transparent 73%);
+  animation: bb-float-3 17s ease-in-out infinite alternate;
+}
+.bb-orb--4 {
+  width: 150px; height: 150px; top: 6%; left: 52%;
+  background: radial-gradient(circle at 30% 30%, #ff9ad1, #c026c9 52%, transparent 74%);
+  animation: bb-float-4 21s ease-in-out infinite alternate;
+}
+.bb-orb--5 {
+  width: 120px; height: 120px; top: 72%; left: 54%;
+  background: radial-gradient(circle at 30% 30%, #b69bff, #7c3aed 52%, transparent 74%);
+  animation: bb-float-1 23s ease-in-out infinite alternate;
+}
+/* A faint slow-rotating ring for extra depth. */
+.bb-orb--ring {
+  width: 360px; height: 360px; top: 50%; left: 50%;
+  margin: -180px 0 0 -180px;
+  background: conic-gradient(from 0deg, rgba(108,78,212,0.0), rgba(224,64,251,0.35), rgba(108,78,212,0.0));
+  filter: blur(30px);
+  opacity: 0.5;
+  mix-blend-mode: screen;
+  animation: bb-spin 28s linear infinite;
+}
+
+@keyframes bb-float-1 { from { transform: translate(0, 0) scale(1); } to { transform: translate(46px, -34px) scale(1.16); } }
+@keyframes bb-float-2 { from { transform: translate(0, 0) scale(1.05); } to { transform: translate(-40px, 30px) scale(0.9); } }
+@keyframes bb-float-3 { from { transform: translate(0, 0) scale(0.95); } to { transform: translate(34px, -28px) scale(1.12); } }
+@keyframes bb-float-4 { from { transform: translate(0, 0) scale(1); } to { transform: translate(-30px, 36px) scale(1.18); } }
+@keyframes bb-spin   { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+.bb-art-content {
+  position: relative;
+  z-index: 1;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 32px;
+}
+
+.bb-brand {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-bottom: 28px;
-
-  &-icon {
-    width: 44px;
-    height: 44px;
-    background: linear-gradient(135deg, #6C4ED4, #E040FB);
-    border-radius: 12px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-  }
-
-  span {
-    font-size: 20px;
-    font-weight: 700;
-    color: #ffffff;
-  }
+  span { font-size: 19px; font-weight: 700; color: #ffffff; letter-spacing: -0.2px; }
 }
-
-.bb-login-title {
-  font-size: 20px;
-  font-weight: 700;
-  color: #ffffff;
-  margin-bottom: 6px;
+.bb-brand-icon {
+  width: 40px; height: 40px; flex-shrink: 0;
+  background: linear-gradient(135deg, #6C4ED4, #E040FB);
+  border-radius: 12px;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 8px 24px rgba(108, 78, 212, 0.5);
 }
+.bb-art-copy { padding-bottom: 4px; }
+.bb-art-title { font-size: 26px; line-height: 1.25; font-weight: 700; color: #F8FAFF; }
+.bb-art-sub { margin-top: 10px; font-size: 13px; color: rgba(248, 250, 255, 0.7); max-width: 280px; }
 
-.bb-login-sub {
-  font-size: 13px;
-  color: #6E6E9A;
+/* ── Form panel ───────────────────────────────────────────── */
+.bb-login-form {
+  flex: 1 1 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  background: #0F1030;
 }
+.bb-form-inner { width: 100%; max-width: 320px; }
 
-.bb-field-label {
-  font-size: 12px;
-  font-weight: 600;
-  color: #9090B8;
-  margin-bottom: 6px;
-}
+.bb-login-title { font-size: 28px; font-weight: 700; color: #ffffff; }
+.bb-login-sub { font-size: 13px; color: #6E6E9A; margin-top: 6px; }
 
-.bb-input {
+.bb-form { margin-top: 30px; }
+
+.bb-uinput {
+  margin-bottom: 22px;
+
   .q-field__control {
-    background: rgba(255, 255, 255, 0.04) !important;
+    padding: 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+    transition: border-color 0.3s ease;
   }
+  .q-field__control:hover { border-bottom-color: rgba(255, 255, 255, 0.26); }
+  &.q-field--focused .q-field__control { border-bottom-color: #8B6FEC; }
 
-  &.q-field--outlined .q-field__control:before {
-    border-color: rgba(255, 255, 255, 0.1) !important;
-  }
-
-  &.q-field--focused.q-field--outlined .q-field__control:before {
-    border-color: #6C4ED4 !important;
-  }
-}
-
-.bb-forgot {
-  font-size: 12px;
-  color: #6C4ED4;
-  text-align: right;
-  cursor: pointer;
-
-  &:hover { color: #8B6FEC; }
+  .q-field__native { color: #F8FAFF; font-size: 14px; }
+  .q-field__native::placeholder { color: #6E6E9A; }
+  .q-field__append .q-icon { color: #6E6E9A; transition: color 0.3s ease; }
+  &.q-field--focused .q-field__append .q-icon { color: #8B6FEC; }
 }
 
 .bb-login-btn {
-  background: linear-gradient(135deg, #6C4ED4, #E040FB) !important;
-  color: #ffffff !important;
-  height: 44px !important;
+  width: 100%;
+  height: 46px;
+  margin-top: 8px;
   font-size: 14px !important;
   font-weight: 600 !important;
-  border-radius: 10px !important;
+  border-radius: 999px !important;
+  color: #ffffff !important;
+  background: linear-gradient(135deg, #6C4ED4, #E040FB) !important;
+  background-size: 180% 180% !important;
+  box-shadow: 0 8px 24px rgba(108, 78, 212, 0.35);
+  transition: transform 0.25s ease, box-shadow 0.25s ease, background-position 0.6s ease;
+
+  &:hover {
+    transform: translateY(-2px);
+    background-position: 100% 100% !important;
+    box-shadow: 0 14px 34px rgba(108, 78, 212, 0.55);
+  }
+  &:active { transform: translateY(0); }
 }
 
-.bb-divider {
+.bb-form-links {
   display: flex;
+  justify-content: space-between;
   align-items: center;
   gap: 12px;
-  color: #3D3D5C;
-  font-size: 12px;
-
-  &::before, &::after {
-    content: '';
-    flex: 1;
-    height: 1px;
-    background: rgba(255, 255, 255, 0.07);
-  }
+  margin-top: 22px;
 }
-
-.bb-signup-txt {
-  font-size: 13px;
-  color: #6E6E9A;
-}
-
-.bb-signup-link {
-  font-size: 13px;
+.bb-link {
+  font-size: 12.5px;
   color: #8B6FEC;
   cursor: pointer;
-  font-weight: 500;
-
+  transition: color 0.2s ease;
   &:hover { color: #E040FB; }
+}
+
+.bb-error-banner {
+  background: rgba(239, 68, 68, 0.12) !important;
+  color: #ffb4b4 !important;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  font-size: 12.5px;
+}
+
+/* ── Responsive: stack and drop the art panel on small screens ─ */
+@media (max-width: 820px) {
+  .bb-login-art { display: none; }
+  .bb-login-shell { max-width: 420px; min-height: 0; }
+  .bb-login-form { padding: 36px 28px; }
+}
+
+/* Respect users who prefer reduced motion. */
+@media (prefers-reduced-motion: reduce) {
+  .bb-orb, .bb-orb--ring, .bb-login-shell { animation: none; }
 }
 </style>

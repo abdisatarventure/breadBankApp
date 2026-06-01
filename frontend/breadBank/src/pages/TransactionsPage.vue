@@ -25,6 +25,14 @@
         class="bb-filter-select"
         @update:model-value="() => { offset = 0; void loadTransactions(); }"
       />
+      <q-select
+        v-model="filterMonth"
+        :options="monthOptions"
+        emit-value map-options
+        dense outlined dark
+        class="bb-filter-select"
+        @update:model-value="() => { offset = 0; void loadTransactions(); }"
+      />
       <q-btn no-caps flat label="Clear filters" size="sm" style="color:#6E6E9A" @click="clearFilters" />
     </div>
 
@@ -60,28 +68,34 @@
         <span class="bb-tx-col-amt">Amount</span>
       </div>
 
-      <div
-        v-for="tx in transactions"
-        :key="tx.id"
-        class="bb-tx-row"
-        @click="openEdit(tx)"
-      >
-        <span class="bb-tx-col-date bb-tx-date">{{ fmtDate(tx.date) }}</span>
-        <span class="bb-tx-col-desc">
-          <div class="bb-tx-merchant">{{ tx.merchant || tx.description }}</div>
-          <div v-if="tx.merchant" class="bb-tx-desc-small">{{ tx.description }}</div>
-        </span>
-        <span class="bb-tx-col-cat">
-          <span v-if="tx.category" class="bb-cat-chip" :style="{ background: hex(tx.category_color ?? '#6C4ED4') + '22', color: tx.category_color ?? '#6C4ED4' }">
-            {{ tx.category }}
+      <template v-for="(tx, i) in transactions" :key="tx.id">
+        <div
+          v-if="i === 0 || monthKeyOf(tx.date) !== monthKeyOf(transactions[i - 1]?.date ?? '')"
+          class="bb-tx-month-header"
+        >
+          {{ monthLabel(monthKeyOf(tx.date)) }}
+        </div>
+        <div
+          class="bb-tx-row"
+          @click="openEdit(tx)"
+        >
+          <span class="bb-tx-col-date bb-tx-date">{{ fmtDate(tx.date) }}</span>
+          <span class="bb-tx-col-desc">
+            <div class="bb-tx-merchant">{{ tx.merchant || tx.description }}</div>
+            <div v-if="tx.merchant" class="bb-tx-desc-small">{{ tx.description }}</div>
           </span>
-          <span v-else class="bb-cat-chip bb-cat-unknown">Unknown</span>
-        </span>
-        <span class="bb-tx-col-acct bb-tx-acct">{{ tx.account_name }}</span>
-        <span class="bb-tx-col-amt" :class="tx.type === 'credit' ? 'bb-amt-credit' : 'bb-amt-debit'">
-          {{ tx.type === 'credit' ? '+' : '-' }}${{ tx.amount.toFixed(2) }}
-        </span>
-      </div>
+          <span class="bb-tx-col-cat">
+            <span v-if="tx.category" class="bb-cat-chip" :style="{ background: hex(tx.category_color ?? '#6C4ED4') + '22', color: tx.category_color ?? '#6C4ED4' }">
+              {{ tx.category }}
+            </span>
+            <span v-else class="bb-cat-chip bb-cat-unknown">Unknown</span>
+          </span>
+          <span class="bb-tx-col-acct bb-tx-acct">{{ tx.account_name }}</span>
+          <span class="bb-tx-col-amt" :class="tx.type === 'credit' ? 'bb-amt-credit' : 'bb-amt-debit'">
+            {{ tx.type === 'credit' ? '+' : '-' }}${{ fmtAmount(tx.amount) }}
+          </span>
+        </div>
+      </template>
     </div>
 
     <!-- Pagination -->
@@ -108,7 +122,7 @@
         <div v-if="editTx" class="bb-edit-info">
           <div class="bb-edit-merchant">{{ editTx.merchant || editTx.description }}</div>
           <div class="bb-edit-amount" :class="editTx.type === 'credit' ? 'bb-amt-credit' : 'bb-amt-debit'">
-            {{ editTx.type === 'credit' ? '+' : '-' }}${{ editTx.amount.toFixed(2) }}
+            {{ editTx.type === 'credit' ? '+' : '-' }}${{ fmtAmount(editTx.amount) }}
           </div>
         </div>
 
@@ -139,18 +153,20 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
-import { api, type Transaction, type Category } from 'src/services/api';
+import { api, type Transaction, type Category, type TransactionMonth } from 'src/services/api';
 
 const PAGE_SIZE = 50;
 
 const transactions   = ref<Transaction[]>([]);
 const categories     = ref<Category[]>([]);
+const months         = ref<TransactionMonth[]>([]);
 const loading        = ref(true);
 const loadError      = ref('');
 const total          = ref(0);
 const offset         = ref(0);
 const search         = ref('');
 const filterCategory = ref('All Categories');
+const filterMonth    = ref(''); // '' = all months, otherwise 'YYYY-MM'
 
 let searchTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -162,6 +178,25 @@ const hasNext      = computed(() => offset.value + PAGE_SIZE < total.value);
 const categoryNames = computed(() => categories.value.map(c => c.name));
 const categoryOptions = computed(() => categories.value.map(c => ({ id: c.id, name: c.name, color: c.color })));
 
+const monthOptions = computed(() => [
+  { label: 'All Months', value: '' },
+  ...months.value.map(m => ({ label: `${monthLabel(m.monthKey)} (${m.count})`, value: m.monthKey })),
+]);
+
+// The API returns dates as calendar dates serialized at UTC midnight
+// (e.g. "2026-06-01T00:00:00.000Z"). Parsing those with `new Date()` and
+// rendering in a US timezone shifts them back a day, so a June 1 transaction
+// shows as "May 31" while still grouping under June. Work off the YYYY-MM-DD
+// portion directly so the day shown matches the stored (and grouped) day.
+function monthKeyOf(iso: string) {
+  return iso.slice(0, 7); // 'YYYY-MM' straight from the stored calendar date
+}
+
+function monthLabel(monthKey: string) {
+  const [y, m] = monthKey.split('-').map(Number);
+  return new Date(y ?? 0, (m ?? 1) - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+}
+
 // Edit dialog
 const editOpen     = ref(false);
 const editTx       = ref<Transaction | null>(null);
@@ -172,7 +207,13 @@ const saving       = ref(false);
 function hex(color: string) { return color; }
 
 function fmtDate(iso: string) {
-  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  const [y, m, d] = iso.slice(0, 10).split('-').map(Number);
+  return new Date(y ?? 0, (m ?? 1) - 1, d ?? 1)
+    .toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function fmtAmount(n: number) {
+  return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 async function loadTransactions() {
@@ -182,6 +223,12 @@ async function loadTransactions() {
     const params: Record<string, string> = { limit: String(PAGE_SIZE), offset: String(offset.value) };
     if (search.value) params.search = search.value;
     if (filterCategory.value !== 'All Categories') params.category = filterCategory.value;
+    if (filterMonth.value) {
+      const [y, m] = filterMonth.value.split('-').map(Number);
+      const lastDay = new Date(y ?? 0, m ?? 1, 0).getDate(); // day 0 of next month = last day of this one
+      params.startDate = `${filterMonth.value}-01`;
+      params.endDate = `${filterMonth.value}-${String(lastDay).padStart(2, '0')}`;
+    }
 
     const res = await api.getTransactions(params);
     transactions.value = res.transactions;
@@ -223,6 +270,7 @@ function clearSearch() {
 function clearFilters() {
   search.value         = '';
   filterCategory.value = 'All Categories';
+  filterMonth.value    = '';
   offset.value         = 0;
   void loadTransactions();
 }
@@ -253,8 +301,9 @@ async function saveEdit() {
 
 onMounted(async () => {
   try {
-    const [, cats] = await Promise.all([loadTransactions(), api.getCategories()]);
+    const [, cats, mos] = await Promise.all([loadTransactions(), api.getCategories(), api.getTransactionMonths()]);
     categories.value = cats;
+    months.value = mos;
   } catch (e) {
     // loadTransactions handles its own error state; this catches a failed
     // category fetch so it isn't silently swallowed.
@@ -293,30 +342,37 @@ onMounted(async () => {
 .bb-tx-table { border-radius: 12px; overflow: hidden; border: 1px solid rgba(255,255,255,0.06); }
 
 .bb-tx-header-row {
-  display: flex; align-items: center; padding: 10px 16px;
+  display: flex; align-items: center; gap: 12px; padding: 10px 16px;
   background: #0F1030; font-size: 10px; font-weight: 600;
   letter-spacing: 0.6px; text-transform: uppercase; color: #4D4D70;
   border-bottom: 1px solid rgba(255,255,255,0.05);
 }
 
+.bb-tx-month-header {
+  padding: 8px 16px; background: #0C0C22;
+  font-size: 11px; font-weight: 700; letter-spacing: 0.6px;
+  text-transform: uppercase; color: #8B6FEC;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+
 .bb-tx-row {
-  display: flex; align-items: center; padding: 12px 16px;
+  display: flex; align-items: center; gap: 12px; padding: 12px 16px;
   background: #0A0A1B; border-bottom: 1px solid rgba(255,255,255,0.04);
   cursor: pointer; transition: background 0.1s;
   &:hover { background: #0F1030; }
   &:last-child { border-bottom: none; }
 }
 
-.bb-tx-col-date { width: 100px; flex-shrink: 0; }
-.bb-tx-col-desc { flex: 1; min-width: 0; padding-right: 12px; }
-.bb-tx-col-cat  { width: 150px; flex-shrink: 0; }
-.bb-tx-col-acct { width: 120px; flex-shrink: 0; }
-.bb-tx-col-amt  { width: 100px; flex-shrink: 0; text-align: right; font-weight: 600; font-size: 13px; }
+.bb-tx-col-date { width: 92px;  flex-shrink: 0; }
+.bb-tx-col-desc { flex: 1; min-width: 0; }
+.bb-tx-col-cat  { width: 140px; flex-shrink: 0; }
+.bb-tx-col-acct { width: 130px; flex-shrink: 0; min-width: 0; }
+.bb-tx-col-amt  { width: 104px; flex-shrink: 0; text-align: right; font-weight: 600; font-size: 13px; white-space: nowrap; }
 
-.bb-tx-date    { font-size: 12px; color: #6E6E9A; }
+.bb-tx-date    { font-size: 12px; color: #6E6E9A; white-space: nowrap; }
 .bb-tx-merchant { font-size: 13px; font-weight: 500; color: #ffffff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .bb-tx-desc-small { font-size: 11px; color: #4D4D70; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.bb-tx-acct    { font-size: 11px; color: #6E6E9A; }
+.bb-tx-acct    { font-size: 11px; color: #6E6E9A; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 .bb-cat-chip {
   font-size: 11px; font-weight: 500; padding: 3px 9px;

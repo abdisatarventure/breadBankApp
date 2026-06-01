@@ -2,10 +2,30 @@
   <q-page class="bb-dash q-pa-lg">
 
     <!-- Header -->
-    <div class="bb-page-header">
-      <div class="bb-page-title">Welcome Back!</div>
-      <div class="bb-page-sub">Here's your financial summary for {{ currentMonth }}</div>
+    <div class="bb-page-header row items-center justify-between">
+      <div>
+        <div class="bb-page-title">Welcome Back!</div>
+        <div class="bb-page-sub">Here's your financial summary for {{ currentMonth }}</div>
+      </div>
+      <div class="row items-center q-gutter-sm">
+        <q-btn
+          no-caps unelevated icon="sync" label="Sync"
+          :loading="syncing"
+          @click="syncBank"
+          style="background:rgba(108,78,212,0.15);color:#8B6FEC;border-radius:8px"
+        />
+        <q-btn
+          no-caps unelevated icon="account_balance" label="Connect bank"
+          :loading="connecting"
+          @click="connectBank"
+          style="background:linear-gradient(135deg,#6C4ED4,#E040FB);color:#fff;border-radius:8px"
+        />
+      </div>
     </div>
+
+    <q-banner v-if="bankError" class="bb-error-banner q-mb-md" dense rounded>
+      {{ bankError }}
+    </q-banner>
 
     <!-- Loading -->
     <div v-if="loading" class="bb-loading">
@@ -142,6 +162,56 @@
           </div>
         </div>
 
+        <!-- Checking Balance -->
+        <div class="col-6 col-md-3">
+          <div class="bb-stat">
+            <div class="bb-stat-lbl">
+              <span class="bb-dot" style="background:#3B82F6"></span>
+              CHECKING BALANCE
+            </div>
+            <div class="bb-stat-val">{{ fmt(checkingBalance) }}</div>
+            <div class="bb-acct-breakdown">
+              <div v-for="a in checkingBreakdown" :key="a.name" class="bb-acct-row">
+                <span class="bb-acct-name">{{ a.name }}</span>
+                <span class="bb-acct-bal">{{ fmt(a.balance) }}</span>
+              </div>
+              <span v-if="checkingBreakdown.length === 0" class="bb-stat-cmp">no checking accounts</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Savings Balance -->
+        <div class="col-6 col-md-3">
+          <div class="bb-stat">
+            <div class="bb-stat-lbl">
+              <span class="bb-dot" style="background:#14B8A6"></span>
+              SAVINGS BALANCE
+            </div>
+            <div class="bb-stat-val">{{ fmt(savingsBalance) }}</div>
+            <div class="bb-acct-breakdown">
+              <div v-for="a in savingsBreakdown" :key="a.name" class="bb-acct-row">
+                <span class="bb-acct-name">{{ a.name }}</span>
+                <span class="bb-acct-bal">{{ fmt(a.balance) }}</span>
+              </div>
+              <span v-if="savingsBreakdown.length === 0" class="bb-stat-cmp">no savings accounts</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Net Worth -->
+        <div class="col-6 col-md-3">
+          <div class="bb-stat">
+            <div class="bb-stat-lbl">
+              <span class="bb-dot" style="background:#A855F7"></span>
+              NET WORTH
+            </div>
+            <div class="bb-stat-val" :style="netWorth < 0 ? 'color:#EF4444' : ''">{{ fmt(netWorth) }}</div>
+            <div class="bb-stat-row">
+              <span class="bb-stat-cmp">cash on hand minus card debt</span>
+            </div>
+          </div>
+        </div>
+
         <!-- Metropolis Parking -->
         <div class="col-6 col-md-3">
           <div class="bb-stat">
@@ -228,16 +298,49 @@ const aiSuggestions = ref<string[]>([]);
 
 const hasData      = computed(() => (dash.value?.categoryBreakdown.length ?? 0) > 0);
 
-// For a credit account, balance = payments - purchases, so the amount still
-// owed is the negation of that. Clamp at 0 so a paid-off/overpaid card reads
-// as $0 owed rather than a negative "debt".
-const owedFor = (a: Account) => Math.max(0, -(a.balance ?? 0));
+// Amount owed on a credit card. For Plaid-linked cards we have the real
+// statement balance (current_balance, positive = owed). For CSV-only cards we
+// derive it: balance = payments - purchases, so owed is the negation. Clamp at
+// 0 so a paid-off/overpaid card reads as $0 rather than a negative "debt".
+const owedFor = (a: Account) =>
+  a.current_balance != null
+    ? Math.max(0, a.current_balance)
+    : Math.max(0, -(a.balance ?? 0));
 const debtBreakdown = computed(() =>
   accounts.value
     .filter(a => a.type === 'credit')
     .map(a => ({ name: a.name, owed: owedFor(a) })),
 );
 const totalDebt = computed(() => debtBreakdown.value.reduce((s, d) => s + d.owed, 0));
+
+// Checking / savings balances. Match on the account `type` first, falling back
+// to the account name, since deposit accounts aren't always typed consistently.
+const matchAccounts = (re: RegExp) =>
+  accounts.value.filter(a => re.test(a.type ?? '') || re.test(a.name ?? ''));
+
+// The accounts that actually make up a balance card. If any account in the
+// group is linked to Plaid (real bank balance), trust only those and ignore
+// stale CSV-imported duplicates; otherwise fall back to the derived balances.
+const contributingAccounts = (list: Account[]) => {
+  const linked = list.filter(a => a.current_balance != null);
+  const chosen = linked.length ? linked : list;
+  return chosen.map(a => ({ name: a.name, balance: a.current_balance ?? a.balance ?? 0 }));
+};
+const sumBalance = (list: Account[]) =>
+  contributingAccounts(list).reduce((s, a) => s + a.balance, 0);
+
+const checkingAccounts  = computed(() => matchAccounts(/check/i));
+// Health Savings Accounts (HSA) contain "savings" in their name but are a
+// separate medical account — keep them out of the Savings Balance card.
+const isHsa = (a: Account) => /hsa|health\s*saving/i.test(`${a.type ?? ''} ${a.name ?? ''}`);
+const savingsAccounts   = computed(() => matchAccounts(/saving/i).filter(a => !isHsa(a)));
+const checkingBreakdown = computed(() => contributingAccounts(checkingAccounts.value));
+const savingsBreakdown  = computed(() => contributingAccounts(savingsAccounts.value));
+const checkingBalance   = computed(() => sumBalance(checkingAccounts.value));
+const savingsBalance    = computed(() => sumBalance(savingsAccounts.value));
+
+// Net worth = liquid cash on hand (checking + savings) minus credit-card debt.
+const netWorth = computed(() => checkingBalance.value + savingsBalance.value - totalDebt.value);
 
 const spendingDown = computed(() => {
   if (!dash.value || dash.value.previousMonthSpending === 0) return true;
@@ -278,7 +381,7 @@ async function loadAiSummary() {
   }
 }
 
-onMounted(async () => {
+async function load() {
   try {
     const [dashData, acctData] = await Promise.all([
       api.getDashboard(),
@@ -292,13 +395,89 @@ onMounted(async () => {
   } finally {
     loading.value = false;
   }
+}
+
+onMounted(async () => {
+  await load();
+  // Auto-sync once per login: the login flow sets this flag, we consume it
+  // here so a fresh pull from Plaid happens without the user clicking Sync.
+  if (sessionStorage.getItem('bb_sync_on_login')) {
+    sessionStorage.removeItem('bb_sync_on_login');
+    await syncBank();
+  }
 });
+
+// ── Bank linking (Plaid) ───────────────────────────────────
+
+const connecting = ref(false);
+const syncing    = ref(false);
+const bankError  = ref('');
+
+// Plaid Link is a drop-in widget loaded from Plaid's CDN at runtime.
+declare global {
+  interface Window {
+    Plaid?: { create: (cfg: Record<string, unknown>) => { open: () => void } };
+  }
+}
+
+function loadPlaidScript(): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (window.Plaid) { resolve(); return; }
+    const s = document.createElement('script');
+    s.src = 'https://cdn.plaid.com/link/v2/stable/link-initialize.js';
+    s.onload = () => resolve();
+    s.onerror = () => reject(new Error('Failed to load Plaid Link'));
+    document.head.appendChild(s);
+  });
+}
+
+async function connectBank() {
+  bankError.value = '';
+  connecting.value = true;
+  try {
+    await loadPlaidScript();
+    const { link_token } = await api.createPlaidLinkToken();
+    const handler = window.Plaid!.create({
+      token: link_token,
+      onSuccess: async (publicToken: string) => {
+        try {
+          await api.exchangePlaidToken(publicToken);
+          await load();
+        } catch (e) {
+          bankError.value = e instanceof Error ? e.message : 'Failed to import account';
+        } finally {
+          connecting.value = false;
+        }
+      },
+      onExit: () => { connecting.value = false; },
+    });
+    handler.open();
+  } catch (e) {
+    bankError.value = e instanceof Error ? e.message : 'Failed to start bank linking';
+    connecting.value = false;
+  }
+}
+
+async function syncBank() {
+  bankError.value = '';
+  syncing.value = true;
+  try {
+    await api.syncPlaid();
+    await load();
+  } catch (e) {
+    bankError.value = e instanceof Error ? e.message : 'Failed to sync';
+  } finally {
+    syncing.value = false;
+  }
+}
 
 // ── Charts ─────────────────────────────────────────────────
 
 const categorySeries = computed(() => [{
   name: 'Spent',
-  data: (dash.value?.categoryBreakdown ?? []).map(c => ({ x: c.category, y: Math.round(c.total) })),
+  // Keep cents so near-identical categories (e.g. $807.09 vs $806.76) stay
+  // distinguishable instead of both rounding to the same whole-dollar label.
+  data: (dash.value?.categoryBreakdown ?? []).map(c => ({ x: c.category, y: Math.round(c.total * 100) / 100 })),
 }]);
 
 const trendSeries = computed(() => [
@@ -331,37 +510,22 @@ const categoryOpts: ApexOptions = {
   colors: ['#6C4ED4'],
   dataLabels: {
     enabled: true,
-    formatter: (val: number) => `$${val}`,
+    formatter: (val: number) => fmt(val),
     style: { fontSize: '11px', colors: ['#ffffff'] },
     offsetX: -4,
   },
   grid: { borderColor: 'rgba(255,255,255,0.04)', strokeDashArray: 4 },
   xaxis: {
-    labels: { style: { colors: '#6E6E9A', fontSize: '11px' }, formatter: (v: string) => `$${v}` },
+    labels: { style: { colors: '#6E6E9A', fontSize: '11px' }, formatter: (v: string) => `$${Math.round(Number(v)).toLocaleString()}` },
     axisBorder: { show: false }, axisTicks: { show: false },
   },
   yaxis: { labels: { style: { colors: '#b0b0cc', fontSize: '12px' } } },
-  tooltip: { theme: 'dark', y: { formatter: (v: number) => `$${v.toLocaleString()}` } },
+  tooltip: { theme: 'dark', y: { formatter: (v: number) => fmt(v) } },
 };
 </script>
 
 <style lang="scss">
 .bb-dash { background-color: #0A0A1B; min-height: 100vh; }
-
-.bb-loading {
-  display: flex; flex-direction: column; align-items: center;
-  justify-content: center; height: 300px; gap: 16px;
-  color: #6E6E9A; font-size: 14px;
-}
-
-.bb-no-data {
-  display: flex; flex-direction: column; align-items: center;
-  justify-content: center; padding: 60px 24px; gap: 10px;
-  background: #0F1030; border: 1px solid rgba(255,255,255,0.07);
-  border-radius: 14px; text-align: center;
-}
-.bb-no-data-title { font-size: 16px; font-weight: 600; color: #ffffff; }
-.bb-no-data-sub   { font-size: 13px; color: #6E6E9A; max-width: 360px; }
 
 .bb-ai-card {
   background: #0F1030; border: 1px solid rgba(255,255,255,0.07);
@@ -388,20 +552,13 @@ const categoryOpts: ApexOptions = {
   li { display: flex; align-items: flex-start; gap: 6px; font-size: 13px; color: #9090B8; line-height: 1.5; }
 }
 
-.bb-stat {
-  background: #0F1030; border: 1px solid rgba(255,255,255,0.07);
-  border-radius: 14px; padding: 18px; height: 100%;
-  &--gradient { background: linear-gradient(145deg,#2D1A6E,#1A1040); border-color: rgba(108,78,212,0.25); }
+.bb-acct-breakdown { display: flex; flex-direction: column; gap: 4px; margin-top: 2px; }
+.bb-acct-row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.bb-acct-name {
+  font-size: 11px; color: #6E6E9A;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.bb-stat-lbl {
-  display: flex; align-items: center; gap: 6px;
-  font-size: 10px; font-weight: 600; letter-spacing: 0.7px;
-  text-transform: uppercase; color: #6E6E9A; margin-bottom: 8px;
-}
-.bb-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
-.bb-stat-val { font-size: 22px; font-weight: 700; color: #ffffff; letter-spacing: -0.5px; margin-bottom: 6px; }
-.bb-stat-row { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
-.bb-stat-cmp { font-size: 11px; color: #6E6E9A; }
+.bb-acct-bal { font-size: 11px; font-weight: 600; color: #C8C8E0; flex-shrink: 0; }
 
 .bb-debt-breakdown { flex-wrap: wrap; gap: 4px 10px; }
 .bb-debt-item {
@@ -418,9 +575,4 @@ const categoryOpts: ApexOptions = {
 .bb-savings-rate { font-size: 11px; font-weight: 600; color: #22C55E; }
 .bb-savings-bar-wrap { height: 4px; background: rgba(255,255,255,0.06); border-radius: 2px; overflow: hidden; margin-top: 4px; }
 .bb-savings-bar { height: 100%; background: linear-gradient(90deg,#6C4ED4,#22C55E); border-radius: 2px; transition: width 0.6s ease; }
-
-.bb-chart-card { background: #0F1030; border: 1px solid rgba(255,255,255,0.07); border-radius: 14px; padding: 20px; }
-.bb-chart-hdr  { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 4px; }
-.bb-chart-title { font-size: 14px; font-weight: 600; color: #ffffff; margin-bottom: 2px; }
-.bb-chart-sub   { font-size: 12px; color: #6E6E9A; }
 </style>
