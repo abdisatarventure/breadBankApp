@@ -229,7 +229,7 @@ onMounted(() => {
   border-radius: 14px; padding: 20px; margin-bottom: 18px; max-width: 760px;
 }
 .bb-set-card-hdr {
-  display: flex; align-items: center; gap: 8px; margin-bottom: 16px;
+  display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 16px;
   font-size: 14px; font-weight: 600; color: #ffffff;
 }
 

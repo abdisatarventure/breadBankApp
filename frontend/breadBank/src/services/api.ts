@@ -223,6 +223,11 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify({ ids, categoryId }),
     }),
+  reclassifyMerchant: (merchant: string, categoryId: number) =>
+    request<{ success: boolean; updated: number }>('/transactions/reclassify-merchant', {
+      method: 'PUT',
+      body: JSON.stringify({ merchant, categoryId }),
+    }),
 
   // Upload
   uploadCSV: (file: File, accountId: number, accountType: string) => {

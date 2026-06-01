@@ -272,57 +272,71 @@ async function handleLogin() {
 }
 .bb-form-inner { width: 100%; max-width: 320px; }
 
-.bb-login-title { font-size: 28px; font-weight: 700; color: #ffffff; }
-.bb-login-sub { font-size: 13px; color: #6E6E9A; margin-top: 6px; }
+.bb-login-title { font-size: 28px; font-weight: 700; color: #ffffff; animation: bb-rise 0.5s ease both; }
+.bb-login-sub { font-size: 13px; color: #6E6E9A; margin-top: 6px; animation: bb-rise 0.5s ease both 0.06s; }
+
+// Staggered entrance for the form, so the panel feels alive on load.
+@keyframes bb-rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+// Button gets an opacity-only entrance so its persisted final transform can't
+// fight the hover-lift below.
+@keyframes bb-fade { from { opacity: 0; } to { opacity: 1; } }
+.bb-form .bb-uinput:nth-of-type(1) { animation: bb-rise 0.5s ease both 0.12s; }
+.bb-form .bb-uinput:nth-of-type(2) { animation: bb-rise 0.5s ease both 0.18s; }
+.bb-login-btn  { animation: bb-fade 0.5s ease both 0.24s; }
+.bb-form-links { animation: bb-rise 0.5s ease both 0.30s; }
 
 .bb-form { margin-top: 30px; }
 
 .bb-uinput {
   margin-bottom: 16px;
 
+  // Solid field colour. The native input, the icon area, and the autofill fill
+  // all use this exact value so the field reads as one seamless rounded box
+  // (no two-tone seam where the icon sits).
+  $field-bg: #17162F;
+
   .q-field__control {
     height: 52px;
     padding: 0 14px;
-    background: rgba(255, 255, 255, 0.035);
+    background: $field-bg;
     border: 1px solid rgba(255, 255, 255, 0.10);
     border-radius: 12px;
-    transition: border-color 0.25s ease, background 0.25s ease, box-shadow 0.25s ease;
+    overflow: hidden;
+    transition: border-color 0.25s ease, box-shadow 0.25s ease;
     // Quasar draws its own underline via ::before/::after — hide it.
     &::before, &::after { display: none; }
   }
-  .q-field__control:hover {
-    border-color: rgba(255, 255, 255, 0.2);
-    background: rgba(255, 255, 255, 0.055);
-  }
+  .q-field__control:hover { border-color: rgba(255, 255, 255, 0.22); }
   &.q-field--focused .q-field__control {
     border-color: #8B6FEC;
-    background: rgba(139, 111, 236, 0.08);
     box-shadow: 0 0 0 3px rgba(139, 111, 236, 0.18);
   }
 
+  // Keep the appended icon flush inside the box (no fixed marginal height).
+  .q-field__marginal { height: auto; color: #6E6E9A; }
+  .q-field__append { padding-left: 8px; }
+  &.q-field--focused .q-field__append .q-icon { color: #8B6FEC; transition: color 0.3s ease; }
+
   .q-field__native { color: #F8FAFF; font-size: 14px; }
   .q-field__native::placeholder { color: #6E6E9A; }
-  .q-field__append .q-icon { color: #6E6E9A; transition: color 0.3s ease; }
-  &.q-field--focused .q-field__append .q-icon { color: #8B6FEC; }
 
-  // Stop Chrome/Safari autofill from painting the field a light colour and
-  // black text — keep it on-theme (dark fill, light text).
+  // Stop Chrome/Safari autofill from painting the field light, and match it to
+  // the field colour so the icon area doesn't look like a separate box.
   input:-webkit-autofill,
   input:-webkit-autofill:hover,
   input:-webkit-autofill:focus,
   input:-webkit-autofill:active {
     -webkit-text-fill-color: #F8FAFF !important;
-    -webkit-box-shadow: 0 0 0 1000px #181734 inset !important;
+    -webkit-box-shadow: 0 0 0 1000px $field-bg inset !important;
     caret-color: #F8FAFF;
-    border-radius: 12px;
     transition: background-color 9999s ease-out 0s;
   }
 }
 
 .bb-login-btn {
   width: 100%;
-  height: 46px;
-  margin-top: 8px;
+  height: 50px;
+  margin-top: 10px;
   font-size: 14px !important;
   font-weight: 600 !important;
   border-radius: 999px !important;
@@ -371,6 +385,9 @@ async function handleLogin() {
 
 /* Respect users who prefer reduced motion. */
 @media (prefers-reduced-motion: reduce) {
-  .bb-orb, .bb-orb--ring, .bb-login-shell { animation: none; }
+  .bb-orb, .bb-orb--ring, .bb-login-shell,
+  .bb-login-title, .bb-login-sub, .bb-uinput, .bb-login-btn, .bb-form-links {
+    animation: none;
+  }
 }
 </style>

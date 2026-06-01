@@ -36,6 +36,7 @@
           :to="item.path"
           active-class="bb-nav-active"
           class="bb-nav-item"
+          @click="onNavClick"
         >
           <q-item-section avatar class="bb-nav-icon">
             <q-icon :name="item.icon" size="18px" />
@@ -58,6 +59,7 @@
           :to="item.path"
           active-class="bb-nav-active"
           class="bb-nav-item"
+          @click="onNavClick"
         >
           <q-item-section avatar class="bb-nav-icon">
             <q-icon :name="item.icon" size="18px" />
@@ -70,6 +72,13 @@
     <!-- Top Header -->
     <q-header class="bb-header">
       <q-toolbar class="bb-toolbar">
+        <q-btn
+          flat round dense icon="menu" size="sm"
+          class="bb-menu-btn"
+          style="color: #6E6E9A"
+          aria-label="Toggle menu"
+          @click="drawerOpen = !drawerOpen"
+        />
         <q-btn
           flat round dense icon="chevron_left" size="sm"
           style="color: #6E6E9A"
@@ -96,6 +105,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import { useQuasar } from 'quasar';
 import { auth } from 'src/services/auth';
 
 interface NavItem {
@@ -104,9 +114,20 @@ interface NavItem {
   path: string;
 }
 
-const drawerOpen = ref(true);
+// Start closed; `show-if-above` keeps it open on desktop, while on phones it
+// stays an overlay you open with the header menu button.
+const drawerOpen = ref(false);
 const route = useRoute();
 const router = useRouter();
+const $q = useQuasar();
+
+const DRAWER_BREAKPOINT = 700;
+
+// On a phone, tapping a destination should close the overlay drawer so it
+// doesn't sit on top of the page you just navigated to.
+function onNavClick() {
+  if ($q.screen.width < DRAWER_BREAKPOINT) drawerOpen.value = false;
+}
 
 const generalNav: NavItem[] = [
   { icon: 'dashboard', label: 'Dashboard', path: '/app/dashboard' },
@@ -302,6 +323,12 @@ async function logout() {
 .bb-toolbar {
   min-height: 50px !important;
   padding: 0 16px !important;
+}
+
+// The hamburger only matters on phones — the drawer is docked on desktop.
+.bb-menu-btn { display: none; }
+@media (max-width: 699px) {
+  .bb-menu-btn { display: inline-flex; }
 }
 
 .bb-sep {

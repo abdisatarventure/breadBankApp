@@ -131,10 +131,69 @@ router.put('/bulk/categorize', async (req: AuthRequest, res: Response) => {
       updated += result.rowsAffected[0] ?? 0;
     }
 
+    // Learn a merchant→category rule for each distinct merchant in the batch so
+    // future imports of those merchants are auto-filed into this category.
+    const merchReq = pool.request().input('userId', sql.Int, req.userId);
+    safeIds.forEach((id, i) => merchReq.input(`m${i}`, sql.Int, id));
+    const merchants = (await merchReq.query(`
+      SELECT DISTINCT merchant FROM transactions
+      WHERE user_id = @userId AND id IN (${safeIds.map((_, i) => `@m${i}`).join(',')})
+        AND merchant IS NOT NULL AND merchant <> ''
+    `)).recordset as { merchant: string }[];
+    for (const { merchant } of merchants) {
+      await pool.request()
+        .input('userId', sql.Int, req.userId)
+        .input('pattern', sql.NVarChar(200), merchant)
+        .input('categoryId', sql.Int, categoryId as number)
+        .query(`
+          IF EXISTS (SELECT 1 FROM merchant_rules WHERE merchant_pattern = @pattern AND user_id = @userId)
+            UPDATE merchant_rules SET category_id = @categoryId WHERE merchant_pattern = @pattern AND user_id = @userId
+          ELSE
+            INSERT INTO merchant_rules (user_id, merchant_pattern, category_id) VALUES (@userId, @pattern, @categoryId)
+        `);
+    }
+
     res.json({ success: true, updated });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Bulk update failed' });
+  }
+});
+
+// PUT /api/transactions/reclassify-merchant  { merchant, categoryId }
+// Retroactively move every transaction from a given merchant into a category,
+// and learn the rule so future imports follow suit. Registered before '/:id'.
+router.put('/reclassify-merchant', async (req: AuthRequest, res: Response) => {
+  try {
+    const { merchant, categoryId } = req.body as { merchant?: unknown; categoryId?: unknown };
+    const cat = Number(categoryId);
+    if (typeof merchant !== 'string' || !merchant.trim() || !Number.isInteger(cat) || cat < 1) {
+      res.status(400).json({ error: 'merchant and a valid categoryId are required' });
+      return;
+    }
+    const pool = getPool();
+
+    const upd = await pool.request()
+      .input('userId', sql.Int, req.userId)
+      .input('merchant', sql.NVarChar(200), merchant.trim())
+      .input('categoryId', sql.Int, cat)
+      .query(`UPDATE transactions SET category_id = @categoryId WHERE user_id = @userId AND merchant = @merchant`);
+
+    await pool.request()
+      .input('userId', sql.Int, req.userId)
+      .input('pattern', sql.NVarChar(200), merchant.trim())
+      .input('categoryId', sql.Int, cat)
+      .query(`
+        IF EXISTS (SELECT 1 FROM merchant_rules WHERE merchant_pattern = @pattern AND user_id = @userId)
+          UPDATE merchant_rules SET category_id = @categoryId WHERE merchant_pattern = @pattern AND user_id = @userId
+        ELSE
+          INSERT INTO merchant_rules (user_id, merchant_pattern, category_id) VALUES (@userId, @pattern, @categoryId)
+      `);
+
+    res.json({ success: true, updated: upd.rowsAffected[0] ?? 0 });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to reclassify merchant' });
   }
 });
 

@@ -83,6 +83,21 @@ router.post('/exchange', async (req: AuthRequest, res: Response) => {
       }
     } catch { /* non-fatal */ }
 
+    // Re-linking an institution you already have would otherwise create a
+    // second item with a fresh set of account ids — i.e. duplicate accounts.
+    // Replace the old link instead: remove its accounts + revoke its token.
+    // (Skipped when the institution name couldn't be resolved, to avoid
+    // matching unrelated items under the generic fallback name.)
+    if (institution !== 'Bank') {
+      const existing = await pool.request()
+        .input('userId', sql.Int, req.userId)
+        .input('institution', sql.NVarChar(200), institution)
+        .query(`SELECT id, access_token FROM plaid_items WHERE user_id = @userId AND institution = @institution`);
+      for (const row of existing.recordset as { id: number; access_token: string }[]) {
+        await removeLinkedItem(req.userId!, row);
+      }
+    }
+
     await pool.request()
       .input('userId', sql.Int, req.userId)
       .input('itemId', sql.NVarChar(100), itemId)
@@ -222,6 +237,37 @@ interface Holding {
 }
 
 // ── Helpers ────────────────────────────────────────────────────────
+
+// Fully unlink a previously-stored item: delete its local accounts (plus their
+// transactions/uploads), revoke the access token at Plaid, and drop the row.
+async function removeLinkedItem(userId: number, row: { id: number; access_token: string }): Promise<void> {
+  const pool = getPool();
+  const token = decryptSecret(row.access_token);
+
+  let acctIds: string[] = [];
+  try {
+    const resp = await plaid.accountsGet({ access_token: token });
+    acctIds = resp.data.accounts.map((a) => a.account_id);
+  } catch { /* token may be invalid — still clean up locally below */ }
+
+  if (acctIds.length) {
+    const req = pool.request().input('userId', sql.Int, userId);
+    acctIds.forEach((id, i) => req.input(`a${i}`, sql.NVarChar(100), id));
+    const placeholders = acctIds.map((_, i) => `@a${i}`).join(',');
+    const local = (await req.query(
+      `SELECT id FROM accounts WHERE user_id = @userId AND plaid_account_id IN (${placeholders})`,
+    )).recordset as { id: number }[];
+    for (const a of local) {
+      await pool.request().input('id', sql.Int, a.id).query(`DELETE FROM transactions WHERE account_id = @id`);
+      await pool.request().input('id', sql.Int, a.id).query(`DELETE FROM uploads WHERE account_id = @id`);
+      await pool.request().input('id', sql.Int, a.id).query(`DELETE FROM accounts WHERE id = @id`);
+    }
+  }
+
+  try { await plaid.itemRemove({ access_token: token }); } catch { /* non-fatal */ }
+  await pool.request().input('id', sql.Int, row.id).query(`DELETE FROM plaid_items WHERE id = @id`);
+}
+
 
 // Create/refresh our accounts rows from Plaid, recording the real current
 // balance so the dashboard's Checking/Savings cards are accurate.

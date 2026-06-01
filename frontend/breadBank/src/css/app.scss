@@ -28,6 +28,13 @@ body.body--dark {
 
 .q-page { background-color: var(--bb-bg); }
 
+// Phones: trim the generous desktop page padding so content isn't squeezed,
+// and let page-header rows wrap their action buttons instead of overflowing.
+@media (max-width: 599px) {
+  .q-pa-lg { padding: 14px !important; }
+  .bb-page-header { margin-bottom: 18px; }
+}
+
 .bb-card {
   background: var(--bb-surface);
   border: 1px solid var(--bb-border);

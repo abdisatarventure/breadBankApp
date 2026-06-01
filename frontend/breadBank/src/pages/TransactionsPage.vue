@@ -339,7 +339,9 @@ onMounted(async () => {
   .q-field__control { background: #0F1030 !important; border-color: rgba(255,255,255,0.08) !important; }
 }
 
-.bb-tx-table { border-radius: 12px; overflow: hidden; border: 1px solid rgba(255,255,255,0.06); }
+.bb-tx-table { border-radius: 12px; overflow-x: auto; border: 1px solid rgba(255,255,255,0.06); }
+// Keep the columns from crushing on phones — scroll the table sideways instead.
+.bb-tx-header-row, .bb-tx-row, .bb-tx-month-header { min-width: 620px; }
 
 .bb-tx-header-row {
   display: flex; align-items: center; gap: 12px; padding: 10px 16px;
@@ -391,7 +393,7 @@ onMounted(async () => {
 
 .bb-edit-dialog {
   background: #0F1030; border: 1px solid rgba(255,255,255,0.1);
-  border-radius: 16px; padding: 28px; min-width: 380px;
+  border-radius: 16px; padding: 28px; width: 92vw; max-width: 380px;
 }
 .bb-edit-title   { font-size: 16px; font-weight: 700; color: #ffffff; margin-bottom: 16px; }
 .bb-edit-info    { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
