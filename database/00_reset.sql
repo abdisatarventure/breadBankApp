@@ -15,8 +15,10 @@ GO
 
 -- Children first (they reference the tables below via foreign keys).
 IF OBJECT_ID('merchant_rules', 'U') IS NOT NULL DROP TABLE merchant_rules;
+IF OBJECT_ID('budgets',        'U') IS NOT NULL DROP TABLE budgets;
 IF OBJECT_ID('transactions',   'U') IS NOT NULL DROP TABLE transactions;
 IF OBJECT_ID('uploads',        'U') IS NOT NULL DROP TABLE uploads;
+IF OBJECT_ID('plaid_items',    'U') IS NOT NULL DROP TABLE plaid_items;
 IF OBJECT_ID('accounts',       'U') IS NOT NULL DROP TABLE accounts;
 IF OBJECT_ID('categories',     'U') IS NOT NULL DROP TABLE categories;
 

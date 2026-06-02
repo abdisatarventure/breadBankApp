@@ -100,6 +100,63 @@ IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'idx_tx_user')
 
 IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'idx_tx_category')
     CREATE INDEX idx_tx_category ON transactions(category_id);
+GO
+
+-- ============================================================
+-- Feature tables & columns (Plaid bank linking, budgets, AI
+-- usage tracking, manual date locks). Idempotent — safe to
+-- re-run. New installs get everything from this one file.
+-- ============================================================
+
+-- ── Plaid items (one per linked bank login) ───────────────
+IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='plaid_items' AND xtype='U')
+CREATE TABLE plaid_items (
+    id           INT IDENTITY(1,1) PRIMARY KEY,
+    user_id      INT            NOT NULL REFERENCES users(id),
+    item_id      NVARCHAR(100)  NOT NULL,
+    access_token NVARCHAR(500)  NOT NULL,   -- AES-256-GCM encrypted at rest
+    institution  NVARCHAR(200)  NULL,
+    sync_cursor  NVARCHAR(MAX)  NULL,        -- Plaid /transactions/sync cursor
+    created_at   DATETIME2      DEFAULT SYSUTCDATETIME()
+);
+
+-- ── Budgets (monthly spending limit per category) ─────────
+IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='budgets' AND xtype='U')
+CREATE TABLE budgets (
+    id            INT IDENTITY(1,1) PRIMARY KEY,
+    user_id       INT            NOT NULL REFERENCES users(id),
+    category_id   INT            NOT NULL REFERENCES categories(id),
+    monthly_limit DECIMAL(12,2)  NOT NULL,
+    created_at    DATETIME2      DEFAULT SYSUTCDATETIME(),
+    CONSTRAINT UQ_budget_user_cat UNIQUE (user_id, category_id)
+);
+
+-- ── AI usage (Claude token spend, per calendar month) ─────
+IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='ai_usage' AND xtype='U')
+CREATE TABLE ai_usage (
+    month_key     CHAR(7)   NOT NULL PRIMARY KEY,   -- 'YYYY-MM'
+    input_tokens  BIGINT    NOT NULL DEFAULT 0,
+    output_tokens BIGINT    NOT NULL DEFAULT 0,
+    updated_at    DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()
+);
+
+-- ── Generic key/value app settings (e.g. AI monthly budget) ─
+IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='app_settings' AND xtype='U')
+CREATE TABLE app_settings (
+    setting_key   NVARCHAR(100) NOT NULL PRIMARY KEY,
+    setting_value NVARCHAR(50)  NULL
+);
+
+-- ── Columns added by Plaid sync + manual date editing ─────
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE Name='plaid_account_id' AND Object_ID=Object_ID('accounts'))
+    ALTER TABLE accounts ADD plaid_account_id NVARCHAR(100) NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE Name='current_balance' AND Object_ID=Object_ID('accounts'))
+    ALTER TABLE accounts ADD current_balance DECIMAL(14,2) NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE Name='plaid_transaction_id' AND Object_ID=Object_ID('transactions'))
+    ALTER TABLE transactions ADD plaid_transaction_id NVARCHAR(100) NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE Name='date_overridden' AND Object_ID=Object_ID('transactions'))
+    ALTER TABLE transactions ADD date_overridden BIT NOT NULL DEFAULT 0;
+GO
 
 PRINT 'Schema created successfully.';
 GO

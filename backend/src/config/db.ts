@@ -8,12 +8,13 @@ if (!process.env.DB_PASSWORD) {
 }
 
 const config: sql.config = {
-  server: 'localhost',
+  server: process.env.DB_SERVER ?? 'localhost',
   database: process.env.DB_NAME ?? 'breadbank',
   user: process.env.DB_USER ?? 'breadbank_user',
   password: process.env.DB_PASSWORD,
   options: {
-    instanceName: 'SQLEXPRESS',
+    // Named instance (e.g. SQLEXPRESS). Set DB_INSTANCE='' for a default instance.
+    instanceName: process.env.DB_INSTANCE ?? 'SQLEXPRESS',
     trustServerCertificate: true,
     encrypt: false,
   },
