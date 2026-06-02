@@ -409,7 +409,10 @@ async function syncItem(userId: number, accessToken: string, itemId: string): Pr
       .input('amount', sql.Decimal(12, 2), amount)
       .input('type', sql.NVarChar(10), type)
       .query(`
-        UPDATE transactions SET date=@date, description=@description, amount=@amount, type=@type
+        UPDATE transactions SET
+          -- Preserve a date the user manually edited (e.g. an early paycheck).
+          date        = CASE WHEN date_overridden = 1 THEN date ELSE @date END,
+          description = @description, amount = @amount, type = @type
         WHERE user_id = @userId AND plaid_transaction_id = @plaidTxId
       `);
   }

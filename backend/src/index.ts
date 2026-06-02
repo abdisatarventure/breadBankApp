@@ -16,6 +16,7 @@ import accountsRouter    from './routes/accounts';
 import aiRouter          from './routes/ai';
 import authRouter        from './routes/auth';
 import plaidRouter       from './routes/plaid';
+import budgetsRouter     from './routes/budgets';
 
 dotenv.config();
 
@@ -61,6 +62,7 @@ app.use('/api/subscriptions', requireAuth, subscriptionsRouter);
 app.use('/api/accounts',     requireAuth, accountsRouter);
 app.use('/api/ai',           requireAuth, aiRouter);
 app.use('/api/plaid',        requireAuth, plaidRouter);
+app.use('/api/budgets',      requireAuth, budgetsRouter);
 
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });

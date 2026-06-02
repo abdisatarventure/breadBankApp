@@ -126,7 +126,10 @@
           </div>
         </div>
 
-        <div class="bb-edit-label q-mt-md">Category</div>
+        <div class="bb-edit-label q-mt-md">Date</div>
+        <q-input v-model="editDate" type="date" dense outlined dark class="q-mb-md" />
+
+        <div class="bb-edit-label">Category</div>
         <q-select
           v-model="editCategory"
           :options="categoryOptions"
@@ -202,6 +205,7 @@ const editOpen     = ref(false);
 const editTx       = ref<Transaction | null>(null);
 const editCategory = ref<number | null>(null);
 const editNote     = ref('');
+const editDate     = ref('');
 const saving       = ref(false);
 
 function hex(color: string) { return color; }
@@ -279,6 +283,7 @@ function openEdit(tx: Transaction) {
   editTx.value       = tx;
   editCategory.value = categories.value.find(c => c.name === tx.category)?.id ?? null;
   editNote.value     = tx.notes ?? '';
+  editDate.value     = tx.date.slice(0, 10); // 'YYYY-MM-DD' for the date input
   editOpen.value     = true;
 }
 
@@ -286,9 +291,10 @@ async function saveEdit() {
   if (!editTx.value) return;
   saving.value = true;
   try {
-    const updates: { categoryId?: number; notes?: string } = {};
+    const updates: { categoryId?: number; notes?: string; date?: string } = {};
     if (editCategory.value !== null) updates.categoryId = editCategory.value;
     if (editNote.value) updates.notes = editNote.value;
+    if (editDate.value && editDate.value !== editTx.value.date.slice(0, 10)) updates.date = editDate.value;
     await api.updateTransaction(editTx.value.id, updates);
     editOpen.value = false;
     await loadTransactions();

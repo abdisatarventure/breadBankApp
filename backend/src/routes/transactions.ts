@@ -214,7 +214,14 @@ router.put('/:id', async (req: AuthRequest, res: Response) => {
       return;
     }
 
-    const { notes, merchant } = req.body as { notes?: string; merchant?: string };
+    const { notes, merchant, date } = req.body as { notes?: string; merchant?: string; date?: string };
+
+    // Optional date override (e.g. a paycheck that posted a couple days early).
+    // Accept a plain calendar date so no timezone shift occurs.
+    if (date !== undefined && date !== null && !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      res.status(400).json({ error: 'date must be in YYYY-MM-DD format' });
+      return;
+    }
 
     const updateRes = await pool.request()
       .input('id',         sql.Int,            id)
@@ -222,11 +229,15 @@ router.put('/:id', async (req: AuthRequest, res: Response) => {
       .input('categoryId', sql.Int,            categoryId ?? null)
       .input('notes',      sql.NVarChar(1000), notes    ?? null)
       .input('merchant',   sql.NVarChar(200),  merchant ?? null)
+      .input('date',       sql.Date,           date     ?? null)
       .query(`
         UPDATE transactions SET
-          category_id = COALESCE(@categoryId, category_id),
-          notes       = COALESCE(@notes,      notes),
-          merchant    = COALESCE(@merchant,   merchant)
+          category_id     = COALESCE(@categoryId, category_id),
+          notes           = COALESCE(@notes,      notes),
+          merchant        = COALESCE(@merchant,   merchant),
+          date            = COALESCE(@date,       date),
+          -- Mark the date as user-set so a later Plaid sync won't reset it.
+          date_overridden = CASE WHEN @date IS NOT NULL THEN 1 ELSE date_overridden END
         WHERE id = @id AND user_id = @userId
       `);
 

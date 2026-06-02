@@ -9,6 +9,15 @@
       </div>
       <div class="row items-center q-gutter-sm">
         <q-btn
+          flat round dense
+          :icon="hideAmounts ? 'visibility_off' : 'visibility'"
+          style="color:#8B6FEC"
+          aria-label="Toggle amount visibility"
+          @click="toggleHideAmounts"
+        >
+          <q-tooltip>{{ hideAmounts ? 'Show amounts' : 'Hide amounts' }}</q-tooltip>
+        </q-btn>
+        <q-btn
           no-caps unelevated icon="sync" label="Sync"
           :loading="syncing"
           @click="syncBank"
@@ -104,10 +113,10 @@
               <span class="bb-dot" style="background:#EF4444"></span>
               TOTAL DEBT
             </div>
-            <div class="bb-stat-val">{{ fmt(totalDebt) }}</div>
+            <div class="bb-stat-val">{{ money(totalDebt) }}</div>
             <div class="bb-stat-row bb-debt-breakdown">
               <span v-for="d in debtBreakdown" :key="d.name" class="bb-debt-item">
-                {{ d.name }} <strong>{{ fmt(d.owed) }}</strong>
+                {{ d.name }} <strong>{{ money(d.owed) }}</strong>
               </span>
               <span v-if="debtBreakdown.length === 0" class="bb-stat-cmp">no credit cards</span>
             </div>
@@ -121,7 +130,7 @@
               <span class="bb-dot" style="background:rgba(255,255,255,0.6)"></span>
               MONTHLY SPENDING
             </div>
-            <div class="bb-stat-val">{{ fmt(dash?.totalSpending ?? 0) }}</div>
+            <div class="bb-stat-val">{{ money(dash?.totalSpending ?? 0) }}</div>
             <div class="bb-stat-row">
               <span :class="spendingDown ? 'bb-badge-down-good' : 'bb-badge-up-bad'">
                 {{ spendingChangePct }}
@@ -138,7 +147,7 @@
               <span class="bb-dot" style="background:#6C4ED4"></span>
               MONTHLY INCOME
             </div>
-            <div class="bb-stat-val">{{ fmt(dash?.totalIncome ?? 0) }}</div>
+            <div class="bb-stat-val">{{ money(dash?.totalIncome ?? 0) }}</div>
             <div class="bb-stat-row">
               <span class="bb-badge-neutral">this month</span>
             </div>
@@ -152,7 +161,7 @@
               <span class="bb-dot" style="background:#22C55E"></span>
               NET SAVINGS
             </div>
-            <div class="bb-stat-val">{{ fmt(dash?.netSavings ?? 0) }}</div>
+            <div class="bb-stat-val">{{ money(dash?.netSavings ?? 0) }}</div>
             <div class="bb-stat-row">
               <span class="bb-savings-rate">{{ (dash?.savingsRate ?? 0).toFixed(0) }}% rate</span>
             </div>
@@ -169,11 +178,11 @@
               <span class="bb-dot" style="background:#3B82F6"></span>
               CHECKING BALANCE
             </div>
-            <div class="bb-stat-val">{{ fmt(checkingBalance) }}</div>
+            <div class="bb-stat-val">{{ money(checkingBalance) }}</div>
             <div class="bb-acct-breakdown">
               <div v-for="a in checkingBreakdown" :key="a.name" class="bb-acct-row">
                 <span class="bb-acct-name">{{ a.name }}</span>
-                <span class="bb-acct-bal">{{ fmt(a.balance) }}</span>
+                <span class="bb-acct-bal">{{ money(a.balance) }}</span>
               </div>
               <span v-if="checkingBreakdown.length === 0" class="bb-stat-cmp">no checking accounts</span>
             </div>
@@ -187,11 +196,11 @@
               <span class="bb-dot" style="background:#14B8A6"></span>
               SAVINGS BALANCE
             </div>
-            <div class="bb-stat-val">{{ fmt(savingsBalance) }}</div>
+            <div class="bb-stat-val">{{ money(savingsBalance) }}</div>
             <div class="bb-acct-breakdown">
               <div v-for="a in savingsBreakdown" :key="a.name" class="bb-acct-row">
                 <span class="bb-acct-name">{{ a.name }}</span>
-                <span class="bb-acct-bal">{{ fmt(a.balance) }}</span>
+                <span class="bb-acct-bal">{{ money(a.balance) }}</span>
               </div>
               <span v-if="savingsBreakdown.length === 0" class="bb-stat-cmp">no savings accounts</span>
             </div>
@@ -205,7 +214,7 @@
               <span class="bb-dot" style="background:#A855F7"></span>
               NET WORTH
             </div>
-            <div class="bb-stat-val" :style="netWorth < 0 ? 'color:#EF4444' : ''">{{ fmt(netWorth) }}</div>
+            <div class="bb-stat-val" :style="netWorth < 0 ? 'color:#EF4444' : ''">{{ money(netWorth) }}</div>
             <div class="bb-stat-row">
               <span class="bb-stat-cmp">cash on hand minus card debt</span>
             </div>
@@ -219,24 +228,24 @@
               <span class="bb-dot" style="background:#F59E0B"></span>
               METROPOLIS PARKING
             </div>
-            <div class="bb-stat-val">{{ fmt(dash?.parkingSpend ?? 0) }}</div>
+            <div class="bb-stat-val">{{ money(dash?.parkingSpend ?? 0) }}</div>
             <div class="bb-stat-row">
               <span class="bb-stat-cmp">
                 {{ (dash?.parkingTxCount ?? 0) === 1 ? '1 charge' : (dash?.parkingTxCount ?? 0) + ' charges' }} this month
               </span>
             </div>
             <div class="bb-stat-row">
-              <span class="bb-stat-cmp">{{ fmt(dash?.parkingSpendYtd ?? 0) }} so far this year</span>
+              <span class="bb-stat-cmp">{{ money(dash?.parkingSpendYtd ?? 0) }} so far this year</span>
             </div>
           </div>
         </div>
       </div>
 
-      <!-- Empty state -->
-      <div v-if="!hasData" class="bb-no-data">
+      <!-- Empty state — only when there's no data at all -->
+      <div v-if="!hasAnyData" class="bb-no-data">
         <q-icon name="upload_file" size="48px" style="color:#6C4ED4;opacity:0.4" />
         <div class="bb-no-data-title">No transactions yet</div>
-        <div class="bb-no-data-sub">Upload a CSV from Wells Fargo, Apple Card, or Discover to get started</div>
+        <div class="bb-no-data-sub">Upload a CSV from Wells Fargo, Apple Card, or Discover — or connect a bank — to get started</div>
         <q-btn no-caps unelevated label="Upload your first statement" to="/app/upload"
           style="background:linear-gradient(135deg,#6C4ED4,#E040FB);color:#fff;border-radius:8px;margin-top:8px" />
       </div>
@@ -254,7 +263,11 @@
               </div>
               <q-btn flat round dense icon="more_vert" size="sm" style="color:#6E6E9A" />
             </div>
-            <VueApexCharts type="bar" height="280" :options="categoryOpts" :series="categorySeries" />
+            <VueApexCharts v-if="hasCategoryData" type="bar" height="280" :options="categoryOpts" :series="categorySeries" />
+            <div v-else class="bb-chart-empty">
+              <q-icon name="pie_chart" size="34px" style="color:#6C4ED4;opacity:0.4" />
+              <span>No spending recorded yet this month.</span>
+            </div>
           </div>
         </div>
 
@@ -296,7 +309,13 @@ const accounts   = ref<Account[]>([]);
 const aiSummary  = ref('');
 const aiSuggestions = ref<string[]>([]);
 
-const hasData      = computed(() => (dash.value?.categoryBreakdown.length ?? 0) > 0);
+// Spending-by-category is scoped to the *current* month, which is empty early
+// in a new month. Don't let that hide the whole charts area — only show the
+// "no transactions" prompt when there's genuinely no data anywhere.
+const hasCategoryData = computed(() => (dash.value?.categoryBreakdown.length ?? 0) > 0);
+const hasAnyData = computed(() =>
+  hasCategoryData.value || (dash.value?.monthlyTrend?.length ?? 0) > 0,
+);
 
 // Amount owed on a credit card. For Plaid-linked cards we have the real
 // statement balance (current_balance, positive = owed). For CSV-only cards we
@@ -356,6 +375,18 @@ const spendingChangePct = computed(() => {
 
 function fmt(val: number) {
   return '$' + val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+// Privacy toggle: one eye in the header masks every dollar amount on the
+// dashboard at once. Persisted so it stays hidden across reloads.
+const hideAmounts = ref(localStorage.getItem('bb_hide_amounts') === '1');
+function toggleHideAmounts() {
+  hideAmounts.value = !hideAmounts.value;
+  localStorage.setItem('bb_hide_amounts', hideAmounts.value ? '1' : '0');
+}
+// Use everywhere a balance/amount is shown, instead of fmt().
+function money(val: number) {
+  return hideAmounts.value ? '••••••' : fmt(val);
 }
 
 function formatBold(text: string) {
@@ -498,34 +529,39 @@ const trendOpts = computed<ApexOptions>(() => ({
     labels: { style: { colors: '#6E6E9A', fontSize: '11px' } },
   },
   yaxis: {
-    labels: { style: { colors: '#6E6E9A', fontSize: '11px' }, formatter: (v: number) => `$${v.toLocaleString()}` },
+    labels: { style: { colors: '#6E6E9A', fontSize: '11px' }, formatter: (v: number) => hideAmounts.value ? '••' : `$${v.toLocaleString()}` },
   },
   legend: { labels: { colors: '#6E6E9A' } },
-  tooltip: { theme: 'dark', y: { formatter: (v: number) => `$${v.toLocaleString()}` } },
+  tooltip: { theme: 'dark', y: { formatter: (v: number) => hideAmounts.value ? '••••' : `$${v.toLocaleString()}` } },
 }));
 
-const categoryOpts: ApexOptions = {
+const categoryOpts = computed<ApexOptions>(() => ({
   chart: { type: 'bar', background: 'transparent', toolbar: { show: false }, foreColor: '#6E6E9A' },
   plotOptions: { bar: { horizontal: true, borderRadius: 4, borderRadiusApplication: 'end', barHeight: '60%' } },
   colors: ['#6C4ED4'],
   dataLabels: {
     enabled: true,
-    formatter: (val: number) => fmt(val),
+    formatter: (val: number) => hideAmounts.value ? '••••' : fmt(val),
     style: { fontSize: '11px', colors: ['#ffffff'] },
     offsetX: -4,
   },
   grid: { borderColor: 'rgba(255,255,255,0.04)', strokeDashArray: 4 },
   xaxis: {
-    labels: { style: { colors: '#6E6E9A', fontSize: '11px' }, formatter: (v: string) => `$${Math.round(Number(v)).toLocaleString()}` },
+    labels: { style: { colors: '#6E6E9A', fontSize: '11px' }, formatter: (v: string) => hideAmounts.value ? '••' : `$${Math.round(Number(v)).toLocaleString()}` },
     axisBorder: { show: false }, axisTicks: { show: false },
   },
   yaxis: { labels: { style: { colors: '#b0b0cc', fontSize: '12px' } } },
-  tooltip: { theme: 'dark', y: { formatter: (v: number) => fmt(v) } },
-};
+  tooltip: { theme: 'dark', y: { formatter: (v: number) => hideAmounts.value ? '••••' : fmt(v) } },
+}));
 </script>
 
 <style lang="scss">
 .bb-dash { background-color: #0A0A1B; min-height: 100vh; }
+
+.bb-chart-empty {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  height: 280px; gap: 12px; color: #6E6E9A; font-size: 13px; text-align: center;
+}
 
 .bb-ai-card {
   background: #0F1030; border: 1px solid rgba(255,255,255,0.07);

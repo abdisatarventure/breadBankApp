@@ -120,6 +120,31 @@ export interface SubscriptionsData {
   summary: { count: number; totalMonthly: number; totalYearly: number };
 }
 
+export interface Budget {
+  categoryId: number;
+  name: string;
+  icon: string;
+  color: string;
+  limit: number;
+  spent: number;
+  lastMonthSpent: number;
+}
+
+export interface BudgetSuggestion {
+  categoryId: number;
+  name: string;
+  icon: string;
+  color: string;
+  lastMonthSpent: number;
+  suggestedLimit: number;
+}
+
+export interface BudgetsData {
+  budgets: Budget[];
+  summary: { totalLimit: number; totalSpent: number };
+  suggestions: BudgetSuggestion[];
+}
+
 export interface Account {
   id: number;
   name: string;
@@ -214,7 +239,7 @@ export const api = {
     return request<{ transactions: Transaction[]; total: number }>(`/transactions${q}`);
   },
   getTransactionMonths: () => request<TransactionMonth[]>('/transactions/months'),
-  updateTransaction: (id: number, body: { categoryId?: number; notes?: string; merchant?: string }) =>
+  updateTransaction: (id: number, body: { categoryId?: number; notes?: string; merchant?: string; date?: string }) =>
     request<{ success: boolean }>(`/transactions/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
   assignTransactionCategory: (id: number, categoryId: number) =>
     request<{ success: boolean }>(`/transactions/${id}`, { method: 'PUT', body: JSON.stringify({ categoryId }) }),
@@ -252,6 +277,13 @@ export const api = {
 
   // Reports
   getReports: () => request<ReportsData>('/reports'),
+
+  // Budgets
+  getBudgets: () => request<BudgetsData>('/budgets'),
+  setBudget: (categoryId: number, limit: number) =>
+    request<{ success: boolean }>('/budgets', { method: 'PUT', body: JSON.stringify({ categoryId, limit }) }),
+  deleteBudget: (categoryId: number) =>
+    request<{ success: boolean }>(`/budgets/${categoryId}`, { method: 'DELETE' }),
 
   // Accounts
   getAccounts: () => request<Account[]>('/accounts'),

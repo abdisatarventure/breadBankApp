@@ -8,21 +8,12 @@
       :breakpoint="700"
       class="bb-sidebar"
     >
-      <!-- Logo -->
-      <div class="bb-logo">
+      <!-- Logo → home (Dashboard) -->
+      <div class="bb-logo" role="button" @click="goHome">
         <div class="bb-logo-icon">
           <q-icon name="account_balance_wallet" size="18px" color="white" />
         </div>
         <span class="bb-logo-text">BreadBank</span>
-      </div>
-
-      <!-- Search -->
-      <div class="bb-search-wrap">
-        <div class="bb-search" @click="$router.push('/transactions')">
-          <q-icon name="search" size="15px" style="color: #6E6E9A" class="q-mr-xs" />
-          <span class="bb-search-ph">Search</span>
-          <div class="bb-kbd">⌘K</div>
-        </div>
       </div>
 
       <!-- General nav -->
@@ -152,6 +143,11 @@ const currentTitle = computed(() => {
   return match ? match.label : 'BreadBank';
 });
 
+function goHome() {
+  void router.push('/app/dashboard');
+  onNavClick(); // close the drawer on mobile
+}
+
 function goBack() {
   // Stay inside the app: if there's no in-app history to go back to,
   // fall back to the dashboard instead of leaving the SPA entirely.
@@ -183,6 +179,10 @@ async function logout() {
   align-items: center;
   gap: 10px;
   padding: 20px 16px 14px;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+
+  &:hover { opacity: 0.85; }
 
   &-icon {
     width: 32px;
@@ -203,10 +203,6 @@ async function logout() {
   }
 }
 
-.bb-search-wrap {
-  padding: 0 10px 14px;
-}
-
 .bb-logout-btn {
   color: var(--bb-text) !important;
   background: rgba(236, 64, 251, 0.08) !important;
@@ -222,33 +218,6 @@ async function logout() {
     background: rgba(236, 64, 251, 0.15) !important;
     border-color: rgba(236, 64, 251, 0.3) !important;
   }
-}
-
-.bb-search {
-  display: flex;
-  align-items: center;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  border-radius: 8px;
-  padding: 7px 10px;
-  cursor: pointer;
-  transition: border-color 0.15s;
-
-  &:hover { border-color: rgba(108, 78, 212, 0.4); }
-
-  &-ph {
-    font-size: 12px;
-    color: #6E6E9A;
-    flex: 1;
-  }
-}
-
-.bb-kbd {
-  font-size: 10px;
-  color: #4D4D70;
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 4px;
-  padding: 2px 5px;
 }
 
 .bb-section-label {
