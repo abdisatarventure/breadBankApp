@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import { getPool, sql } from '../config/db';
 import { AuthRequest } from '../middleware/auth';
+import { SPEND_AMOUNT, INCOME_AMOUNT, NET_SPEND, SPENDING_FILTER } from '../config/spending';
 
 const router = Router();
 
@@ -20,10 +21,10 @@ router.get('/', async (req: AuthRequest, res: Response) => {
         .input('start', sql.Date, startOfMonth)
         .query(`
           SELECT
-            SUM(CASE WHEN t.type='debit'  THEN t.amount ELSE 0 END) AS totalSpending,
-            SUM(CASE WHEN t.type='credit' THEN t.amount ELSE 0 END) AS totalIncome
+            SUM(${SPEND_AMOUNT})  AS totalSpending,
+            SUM(${INCOME_AMOUNT}) AS totalIncome
           FROM transactions t LEFT JOIN categories c ON t.category_id = c.id
-          WHERE t.user_id = @userId AND t.date >= @start AND ISNULL(c.name,'') <> 'Transfer'
+          WHERE t.user_id = @userId AND t.date >= @start
         `),
 
       pool.request()
@@ -31,19 +32,19 @@ router.get('/', async (req: AuthRequest, res: Response) => {
         .input('start', sql.Date, startOfLastMo)
         .input('end',   sql.Date, endOfLastMo)
         .query(`
-          SELECT SUM(CASE WHEN t.type='debit' THEN t.amount ELSE 0 END) AS totalSpending
+          SELECT SUM(${SPEND_AMOUNT}) AS totalSpending
           FROM transactions t LEFT JOIN categories c ON t.category_id = c.id
-          WHERE t.user_id = @userId AND t.date BETWEEN @start AND @end AND ISNULL(c.name,'') <> 'Transfer'
+          WHERE t.user_id = @userId AND t.date BETWEEN @start AND @end
         `),
 
       pool.request()
         .input('userId', sql.Int, userId)
         .input('start', sql.Date, startOfMonth)
         .query(`
-          SELECT c.name AS category, SUM(t.amount) AS total
+          SELECT c.name AS category, SUM(${NET_SPEND}) AS total
           FROM transactions t JOIN categories c ON t.category_id = c.id
-          WHERE t.user_id = @userId AND t.date >= @start AND t.type = 'debit' AND c.name <> 'Transfer'
-          GROUP BY c.name ORDER BY total DESC
+          WHERE t.user_id = @userId AND t.date >= @start AND ${SPENDING_FILTER}
+          GROUP BY c.name HAVING SUM(${NET_SPEND}) > 0 ORDER BY total DESC
         `),
 
       pool.request()
@@ -52,12 +53,11 @@ router.get('/', async (req: AuthRequest, res: Response) => {
         SELECT
           FORMAT(t.date,'MMM')     AS month,
           FORMAT(t.date,'yyyy-MM') AS monthKey,
-          SUM(CASE WHEN t.type='debit'  THEN t.amount ELSE 0 END) AS spending,
-          SUM(CASE WHEN t.type='credit' THEN t.amount ELSE 0 END) AS income
+          SUM(${SPEND_AMOUNT})  AS spending,
+          SUM(${INCOME_AMOUNT}) AS income
         FROM transactions t LEFT JOIN categories c ON t.category_id = c.id
         WHERE t.user_id = @userId
           AND t.date >= DATEADD(MONTH,-5,DATEFROMPARTS(YEAR(GETDATE()),MONTH(GETDATE()),1))
-          AND ISNULL(c.name,'') <> 'Transfer'
         GROUP BY FORMAT(t.date,'MMM'), FORMAT(t.date,'yyyy-MM')
         ORDER BY monthKey
       `),
@@ -66,12 +66,12 @@ router.get('/', async (req: AuthRequest, res: Response) => {
         .input('userId', sql.Int, userId)
         .input('start', sql.Date, startOfMonth)
         .query(`
-          SELECT TOP 5 t.merchant, SUM(t.amount) AS total, COUNT(*) AS txCount
+          SELECT TOP 5 t.merchant, SUM(${NET_SPEND}) AS total, COUNT(*) AS txCount
           FROM transactions t LEFT JOIN categories c ON t.category_id = c.id
-          WHERE t.user_id = @userId AND t.date >= @start AND t.type='debit'
+          WHERE t.user_id = @userId AND t.date >= @start
             AND t.merchant IS NOT NULL AND t.merchant != ''
-            AND ISNULL(c.name,'') <> 'Transfer'
-          GROUP BY t.merchant ORDER BY total DESC
+            AND ${SPENDING_FILTER}
+          GROUP BY t.merchant HAVING SUM(${NET_SPEND}) > 0 ORDER BY total DESC
         `),
 
       pool.request()

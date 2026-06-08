@@ -21,7 +21,7 @@ import budgetsRouter     from './routes/budgets';
 dotenv.config();
 
 const app  = express();
-const PORT = Number(process.env.PORT ?? 3000);
+const PORT = Number(process.env.PORT ?? 3001);
 let server: http.Server | null = null;
 
 const allowedOrigins = process.env.CORS_ORIGIN

@@ -7,7 +7,7 @@
     "backend": "npm --prefix backend run dev",
     "frontend": "npm --prefix frontend/breadBank run dev",
     "install:all": "npm install && npm --prefix backend install && npm --prefix frontend/breadBank install",
-    "kill-ports": "powershell -NoProfile -Command \"foreach ($p in 3000,9000) { Get-NetTCPConnection -LocalPort $p -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue } }; 'Ports 3000 and 9000 cleared'\""
+    "kill-ports": "powershell -NoProfile -Command \"foreach ($p in 3001,3000,9000) { Get-NetTCPConnection -LocalPort $p -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue } }; 'Ports 3001, 3000 and 9000 cleared'\""
   },
   "devDependencies": {
     "concurrently": "^9.1.2"

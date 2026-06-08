@@ -1,8 +1,15 @@
 <template>
   <q-page class="bb-budgets q-pa-lg">
-    <div class="bb-page-header">
-      <div class="bb-page-title">Budgets</div>
-      <div class="bb-page-sub">Set monthly spending limits per category and track your progress</div>
+    <div class="bb-page-header bb-budgets-header">
+      <div>
+        <div class="bb-page-title">Budgets</div>
+        <div class="bb-page-sub">Set monthly spending limits per category and track your progress</div>
+      </div>
+      <q-btn
+        no-caps unelevated icon="auto_awesome" label="Build with AI"
+        class="bb-ai-btn"
+        @click="openPlanner"
+      />
     </div>
 
     <div v-if="loading" class="bb-loading">
@@ -71,6 +78,16 @@
         <div class="bb-bg-panel-hdr">
           <q-icon name="savings" size="18px" style="color:#8B6FEC" />
           <span>Your budgets</span>
+          <q-space />
+          <q-btn
+            v-if="data.budgets.length"
+            flat dense no-caps icon="trending_down" label="Trim all 5%"
+            class="bb-trim-btn"
+            :loading="trimming"
+            @click="trimAll"
+          >
+            <q-tooltip>Lower every budget by 5% to tighten gradually</q-tooltip>
+          </q-btn>
         </div>
 
         <div v-if="data.budgets.length === 0" class="bb-bg-empty">
@@ -126,13 +143,75 @@
         </div>
       </div>
     </template>
+
+    <!-- AI budget planner -->
+    <q-dialog v-model="plannerOpen">
+      <q-card class="bb-planner-card">
+        <div class="bb-planner-hdr">
+          <div>
+            <div class="bb-planner-title"><q-icon name="auto_awesome" size="18px" style="color:#8B6FEC" /> AI budget plan</div>
+            <div class="bb-planner-sub">Built from last month's spending. Adjust the target or edit any amount before applying.</div>
+          </div>
+          <q-btn flat round dense icon="close" v-close-popup />
+        </div>
+
+        <div class="bb-planner-controls">
+          <div class="bb-planner-slider">
+            <div class="bb-planner-slider-lbl">Target reduction vs last month: <strong>{{ reductionPercent }}%</strong></div>
+            <q-slider v-model="reductionPercent" :min="0" :max="40" :step="5" markers color="purple" />
+          </div>
+          <q-btn flat dense no-caps icon="refresh" label="Regenerate" :loading="generating" @click="regenerate" />
+        </div>
+
+        <div v-if="generating && !plan.length" class="bb-planner-loading">
+          <q-spinner color="primary" size="32px" /> <span>Building your plan…</span>
+        </div>
+
+        <div v-else-if="!plan.length" class="bb-planner-empty">
+          No spending categories found for last month. Upload some statements first.
+        </div>
+
+        <template v-else>
+          <div class="bb-planner-list">
+            <div v-for="p in plan" :key="p.categoryId" class="bb-planner-row">
+              <div class="bb-category-icon" :style="{ background: p.color || '#6C4ED4' }">
+                <q-icon :name="p.icon || 'label'" size="15px" color="white" />
+              </div>
+              <div class="bb-planner-info">
+                <div class="bb-planner-name">{{ p.name }}</div>
+                <div class="bb-planner-note">
+                  {{ fmt(p.lastMonthSpent) }} last month<span v-if="p.note"> · {{ p.note }}</span>
+                </div>
+              </div>
+              <q-input v-model.number="p.suggestedLimit" type="number" dense outlined dark prefix="$" class="bb-planner-amt" />
+            </div>
+          </div>
+
+          <div class="bb-planner-foot">
+            <div class="bb-planner-total">
+              Plan total: <strong>{{ fmt(planTotal) }}</strong>
+              <span class="bb-planner-vs">vs {{ fmt(planLastTotal) }} last month</span>
+            </div>
+            <div class="bb-planner-actions">
+              <q-btn flat no-caps label="Cancel" v-close-popup />
+              <q-btn
+                no-caps unelevated :label="`Apply ${plan.length} budget${plan.length === 1 ? '' : 's'}`"
+                :loading="applying"
+                style="background:linear-gradient(135deg,#6C4ED4,#E040FB);color:#fff;border-radius:8px"
+                @click="applyPlan"
+              />
+            </div>
+          </div>
+        </template>
+      </q-card>
+    </q-dialog>
   </q-page>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
 import { useQuasar } from 'quasar';
-import { api, type BudgetsData, type BudgetSuggestion, type Category } from 'src/services/api';
+import { api, type BudgetsData, type BudgetSuggestion, type BudgetPlanItem, type Category } from 'src/services/api';
 
 const $q = useQuasar();
 
@@ -144,6 +223,17 @@ const savingId = ref<number | null>(null);
 const adding = ref(false);
 const addCategory = ref<number | null>(null);
 const addLimit = ref<number | null>(null);
+
+// AI planner state
+const plannerOpen = ref(false);
+const generating = ref(false);
+const applying = ref(false);
+const trimming = ref(false);
+const reductionPercent = ref(10);
+const plan = ref<BudgetPlanItem[]>([]);
+
+const planTotal = computed(() => plan.value.reduce((a, p) => a + (Number(p.suggestedLimit) || 0), 0));
+const planLastTotal = computed(() => plan.value.reduce((a, p) => a + p.lastMonthSpent, 0));
 
 const remaining = computed(() => (data.value?.summary.totalLimit ?? 0) - (data.value?.summary.totalSpent ?? 0));
 
@@ -221,6 +311,66 @@ async function removeBudget(categoryId: number) {
   }
 }
 
+// ── AI planner ──────────────────────────────────────────────
+
+function openPlanner() {
+  plannerOpen.value = true;
+  if (!plan.value.length) void regenerate();
+}
+
+async function regenerate() {
+  generating.value = true;
+  try {
+    const res = await api.generateBudgetPlan(reductionPercent.value);
+    plan.value = res.plan;
+    if (!res.plan.length) {
+      $q.notify({ type: 'info', message: 'No spending found for last month to build a budget from.' });
+    }
+  } catch (e) {
+    $q.notify({ type: 'negative', message: e instanceof Error ? e.message : 'Failed to generate plan' });
+  } finally {
+    generating.value = false;
+  }
+}
+
+async function applyPlan() {
+  const items = plan.value
+    .map((p) => ({ categoryId: p.categoryId, limit: Number(p.suggestedLimit) }))
+    .filter((i) => Number.isFinite(i.limit) && i.limit >= 0);
+  if (!items.length) return;
+  applying.value = true;
+  try {
+    await api.setBudgetsBulk(items);
+    plannerOpen.value = false;
+    await load();
+    $q.notify({ type: 'positive', message: `Applied ${items.length} budgets.` });
+  } catch (e) {
+    $q.notify({ type: 'negative', message: e instanceof Error ? e.message : 'Failed to apply plan' });
+  } finally {
+    applying.value = false;
+  }
+}
+
+// Tighten every existing budget by 5% — the "little by little" lever.
+async function trimAll() {
+  const budgets = data.value?.budgets ?? [];
+  if (!budgets.length) return;
+  const items = budgets.map((b) => ({
+    categoryId: b.categoryId,
+    limit: Math.max(5, Math.round(b.limit * 0.95)),
+  }));
+  trimming.value = true;
+  try {
+    await api.setBudgetsBulk(items);
+    await load();
+    $q.notify({ type: 'positive', message: 'Trimmed all budgets by 5%.' });
+  } catch (e) {
+    $q.notify({ type: 'negative', message: e instanceof Error ? e.message : 'Failed to trim budgets' });
+  } finally {
+    trimming.value = false;
+  }
+}
+
 onMounted(load);
 </script>
 
@@ -270,4 +420,50 @@ onMounted(load);
 }
 .bb-bg-add-cat { min-width: 200px; flex: 1; }
 .bb-bg-add-amt { width: 150px; }
+
+// Header + actions
+.bb-budgets-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+.bb-ai-btn {
+  background: linear-gradient(135deg, #6C4ED4, #E040FB); color: #fff; border-radius: 10px;
+  padding: 8px 16px; font-weight: 600; flex-shrink: 0;
+}
+.bb-trim-btn { color: #F59E0B; }
+
+// Planner dialog
+.bb-planner-card {
+  background: #0F1030; color: #E6E6F5; width: 560px; max-width: 92vw;
+  border: 1px solid rgba(255,255,255,0.08); border-radius: 16px; padding: 20px;
+}
+.bb-planner-hdr { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 16px; }
+.bb-planner-title { font-size: 18px; font-weight: 700; color: #F8FAFF; display: flex; align-items: center; gap: 8px; }
+.bb-planner-sub { color: #8F8FB5; font-size: 13px; margin-top: 4px; max-width: 420px; }
+
+.bb-planner-controls {
+  display: flex; align-items: center; gap: 16px; padding: 14px 16px; margin-bottom: 16px;
+  background: #0A0A1B; border: 1px solid rgba(255,255,255,0.06); border-radius: 12px;
+}
+.bb-planner-slider { flex: 1; }
+.bb-planner-slider-lbl { font-size: 12px; color: #C6C6E5; margin-bottom: 4px; }
+.bb-planner-slider-lbl strong { color: #8B6FEC; }
+
+.bb-planner-loading, .bb-planner-empty {
+  display: flex; align-items: center; justify-content: center; gap: 12px;
+  min-height: 160px; color: #8F8FB5; text-align: center; font-size: 14px;
+}
+
+.bb-planner-list { display: flex; flex-direction: column; gap: 10px; max-height: 46vh; overflow-y: auto; padding-right: 4px; }
+.bb-planner-row { display: flex; align-items: center; gap: 12px; }
+.bb-planner-info { flex: 1; min-width: 0; }
+.bb-planner-name { font-size: 14px; font-weight: 600; color: #F8FAFF; }
+.bb-planner-note { font-size: 12px; color: #6E6E9A; margin-top: 2px; }
+.bb-planner-amt { width: 120px; flex-shrink: 0; }
+
+.bb-planner-foot {
+  display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;
+  margin-top: 18px; padding-top: 16px; border-top: 1px solid rgba(255,255,255,0.08);
+}
+.bb-planner-total { font-size: 14px; color: #C6C6E5; }
+.bb-planner-total strong { color: #F8FAFF; font-size: 16px; }
+.bb-planner-vs { color: #6E6E9A; font-size: 12px; margin-left: 8px; }
+.bb-planner-actions { display: flex; align-items: center; gap: 8px; }
 </style>

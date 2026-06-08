@@ -1,8 +1,18 @@
 import { Router, Response } from 'express';
 import { getPool, sql } from '../config/db';
 import { AuthRequest } from '../middleware/auth';
+import { generateBudgetPlan } from '../services/aiService';
+import { NET_SPEND } from '../config/spending';
 
 const router = Router();
+
+// Last full calendar month, used by the AI plan and the suggestions.
+function lastMonthRange(now = new Date()) {
+  return {
+    start: new Date(now.getFullYear(), now.getMonth() - 1, 1),
+    end: new Date(now.getFullYear(), now.getMonth(), 0),
+  };
+}
 
 // GET /api/budgets — each budget with this-month and last-month spend, a summary,
 // and "where to cut back" suggestions derived from last month's biggest
@@ -30,12 +40,15 @@ router.get('/', async (req: AuthRequest, res: Response) => {
           FROM budgets b
           JOIN categories c ON c.id = b.category_id
           LEFT JOIN (
-            SELECT category_id, SUM(amount) AS spent FROM transactions
-            WHERE user_id = @userId AND type = 'debit' AND date >= @start GROUP BY category_id
+            -- Net of refunds: a credit in a category reduces its spend.
+            SELECT category_id, SUM(CASE WHEN type = 'debit' THEN amount ELSE -amount END) AS spent
+            FROM transactions
+            WHERE user_id = @userId AND date >= @start GROUP BY category_id
           ) tm ON tm.category_id = b.category_id
           LEFT JOIN (
-            SELECT category_id, SUM(amount) AS spent FROM transactions
-            WHERE user_id = @userId AND type = 'debit' AND date BETWEEN @lmStart AND @lmEnd GROUP BY category_id
+            SELECT category_id, SUM(CASE WHEN type = 'debit' THEN amount ELSE -amount END) AS spent
+            FROM transactions
+            WHERE user_id = @userId AND date BETWEEN @lmStart AND @lmEnd GROUP BY category_id
           ) lm ON lm.category_id = b.category_id
           WHERE b.user_id = @userId
           ORDER BY c.name
@@ -45,14 +58,15 @@ router.get('/', async (req: AuthRequest, res: Response) => {
         .input('lmStart', sql.Date, startOfLastMo)
         .input('lmEnd', sql.Date, endOfLastMo)
         .query(`
-          SELECT TOP 5 c.id AS categoryId, c.name, c.icon, c.color, SUM(t.amount) AS lastMonthSpent
+          SELECT TOP 5 c.id AS categoryId, c.name, c.icon, c.color, SUM(${NET_SPEND}) AS lastMonthSpent
           FROM transactions t JOIN categories c ON c.id = t.category_id
-          WHERE t.user_id = @userId AND t.type = 'debit'
+          WHERE t.user_id = @userId
             AND t.date BETWEEN @lmStart AND @lmEnd
             AND c.name NOT IN ('Transfer', 'Income', 'Investments')
             AND c.id NOT IN (SELECT category_id FROM budgets WHERE user_id = @userId)
           GROUP BY c.id, c.name, c.icon, c.color
-          ORDER BY SUM(t.amount) DESC
+          HAVING SUM(${NET_SPEND}) > 0
+          ORDER BY SUM(${NET_SPEND}) DESC
         `),
     ]);
 
@@ -108,6 +122,113 @@ router.put('/', async (req: AuthRequest, res: Response) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to save budget' });
+  }
+});
+
+// POST /api/budgets/generate — ask the AI to propose a full budget across every
+// category you spent in last month, targeting an overall reduction. Returns a
+// plan for review; it is NOT saved until the client applies it via /bulk.
+router.post('/generate', async (req: AuthRequest, res: Response) => {
+  try {
+    const pool = getPool();
+    const userId = req.userId;
+    const { reductionPercent } = req.body as { reductionPercent?: unknown };
+    const reduction = Math.min(Math.max(Number(reductionPercent ?? 10) || 0, 0), 90);
+
+    const { start, end } = lastMonthRange();
+    const spendRes = await pool.request()
+      .input('userId', sql.Int, userId)
+      .input('s', sql.Date, start)
+      .input('e', sql.Date, end)
+      .query(`
+        SELECT c.id AS categoryId, c.name, c.icon, c.color, SUM(${NET_SPEND}) AS lastMonthSpent
+        FROM transactions t JOIN categories c ON c.id = t.category_id
+        WHERE t.user_id = @userId
+          AND t.date BETWEEN @s AND @e
+          AND c.name NOT IN ('Transfer', 'Income', 'Investments')
+        GROUP BY c.id, c.name, c.icon, c.color
+        HAVING SUM(${NET_SPEND}) > 0
+        ORDER BY SUM(${NET_SPEND}) DESC
+      `);
+
+    const cats = spendRes.recordset.map((r) => ({
+      categoryId: r.categoryId as number,
+      name: r.name as string,
+      icon: r.icon as string,
+      color: r.color as string,
+      lastMonthSpent: Number(r.lastMonthSpent),
+    }));
+
+    if (cats.length === 0) {
+      res.json({ plan: [], reductionPercent: reduction });
+      return;
+    }
+
+    const limits = await generateBudgetPlan(
+      cats.map((c) => ({ categoryId: c.categoryId, name: c.name, lastMonthSpent: c.lastMonthSpent })),
+      reduction,
+    );
+    const limitById = new Map(limits.map((l) => [l.categoryId, l]));
+
+    const plan = cats.map((c) => ({
+      categoryId: c.categoryId, name: c.name, icon: c.icon, color: c.color,
+      lastMonthSpent: c.lastMonthSpent,
+      suggestedLimit: limitById.get(c.categoryId)?.suggestedLimit ?? c.lastMonthSpent,
+      note: limitById.get(c.categoryId)?.note ?? '',
+    }));
+
+    res.json({ plan, reductionPercent: reduction });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to generate budget plan' });
+  }
+});
+
+// PUT /api/budgets/bulk — create/update many budgets at once { items: [{categoryId, limit}] }.
+// Powers "Apply AI plan" and "Trim all".
+router.put('/bulk', async (req: AuthRequest, res: Response) => {
+  try {
+    const { items } = req.body as { items?: { categoryId?: unknown; limit?: unknown }[] };
+    if (!Array.isArray(items) || items.length === 0) {
+      res.status(400).json({ error: 'items must be a non-empty array' });
+      return;
+    }
+
+    const clean = items
+      .map((i) => ({ cat: Number(i.categoryId), lim: Number(i.limit) }))
+      .filter((i) => Number.isInteger(i.cat) && i.cat > 0 && Number.isFinite(i.lim) && i.lim >= 0);
+
+    if (clean.length === 0) {
+      res.status(400).json({ error: 'no valid budget items provided' });
+      return;
+    }
+
+    const pool = getPool();
+    const tx = pool.transaction();
+    await tx.begin();
+    try {
+      for (const i of clean) {
+        await tx.request()
+          .input('userId', sql.Int, req.userId)
+          .input('cat', sql.Int, i.cat)
+          .input('lim', sql.Decimal(12, 2), i.lim)
+          .query(`
+            MERGE budgets AS t USING (SELECT @userId AS u, @cat AS c) s
+              ON t.user_id = s.u AND t.category_id = s.c
+            WHEN MATCHED THEN UPDATE SET monthly_limit = @lim
+            WHEN NOT MATCHED THEN INSERT (user_id, category_id, monthly_limit) VALUES (@userId, @cat, @lim);
+          `);
+      }
+      await tx.commit();
+    } catch (e) {
+      await tx.rollback();
+      throw e;
+    }
+
+    res.json({ success: true, updated: clean.length });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to save budgets' });
   }
 });
 

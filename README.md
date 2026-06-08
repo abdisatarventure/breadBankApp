@@ -23,10 +23,12 @@ _Drop your own images into `docs/screenshots/` (e.g. `dashboard.png`) and they'l
 - **Dashboard** — balances, monthly income/spending, net worth, savings rate, per-account breakdowns, and 6-month trend + category charts. One-click "hide amounts" privacy toggle.
 - **Transactions** — searchable, filterable, editable (category, note, **date**). Manual date edits are locked against Plaid overwrites.
 - **AI categorization** — Claude auto-files transactions; it learns your corrections as merchant rules so future imports get smarter.
-- **Budgets** — monthly limits per category with progress bars, plus "where to cut back" suggestions from last month's spending.
+- **Budgets** — monthly limits per category with progress bars. **Build a full budget with AI** from last month's spending (it protects essentials and trims discretionary categories to a target), tighten it gradually with a one-click "trim 5%", and still edit every line by hand. Plus "where to cut back" suggestions.
+- **AI Assistant** — ask natural-language questions about your finances ("how much did I spend on food last month?", "what are my top merchants?") and get answers grounded in your own data.
+- **Smart income vs. spending** — credits are only counted as income when filed under **Income**; a credit in a spending category is treated as a **refund/reimbursement** that offsets that category (great for splitting rent or bills with a roommate). **Transfer** is excluded from both.
 - **Plaid bank linking** — live sync of balances + transactions (Wells Fargo, Discover, Fidelity, etc.). Access tokens are encrypted at rest.
 - **Investments** — holdings, value, and gains pulled from linked brokerages.
-- **Reports, Subscriptions, Categories, AI chat**, and an AI-spend tracker with a configurable monthly budget warning.
+- **Reports, Subscriptions, Categories**, and an AI-spend tracker with a configurable monthly budget warning.
 
 ## Tech stack
 
@@ -100,17 +102,17 @@ node -e "console.log('PLAID_ENC_KEY=' + require('crypto').randomBytes(32).toStri
 
 ### 4. Configure the frontend *(optional)*
 
-The frontend defaults to `http://localhost:3000/api`. Only create `frontend/breadBank/.env` if your API runs elsewhere (e.g. to reach it from a phone on your LAN):
+The frontend defaults to `http://localhost:3001/api`. Only create `frontend/breadBank/.env` if your API runs elsewhere (e.g. to reach it from a phone on your LAN):
 
 ```bash
 cp frontend/breadBank/.env.example frontend/breadBank/.env
-# then set VITE_API_URL=http://<your-pc-ip>:3000/api
+# then set VITE_API_URL=http://<your-pc-ip>:3001/api
 ```
 
 ### 5. Run it
 
 ```bash
-npm run dev      # starts API (:3000) and frontend (:9000) together
+npm run dev      # starts API (:3001) and frontend (:9000) together
 ```
 
 Open **http://localhost:9000**, click **Create an account**, and sign in. You can now upload a CSV (Transactions → Upload) or connect a bank (Dashboard → Connect bank).
@@ -131,7 +133,7 @@ All live in `backend/.env` (copy from `backend/.env.example`).
 | `DB_NAME` / `DB_USER` | No | Default `breadbank` / `breadbank_user`. |
 | `PLAID_CLIENT_ID` / `PLAID_SECRET` / `PLAID_ENV` | For Plaid | Bank linking. Without them the app still runs; Plaid routes return 503. Use `PLAID_ENV=sandbox` while developing. |
 | `CORS_ORIGIN` | No | Comma-separated allowed origins. Default `http://localhost:9000`. Add your LAN URL to use from a phone. |
-| `PORT` | No | API port. Default `3000`. |
+| `PORT` | No | API port. Default `3001`. |
 
 > Note: even if you don't use Plaid, `PLAID_ENC_KEY` is required for the server to boot — just generate one and forget it.
 
@@ -147,7 +149,7 @@ Run from the **repo root**:
 | `npm run backend` | API only |
 | `npm run frontend` | Web app only |
 | `npm run install:all` | Install all dependencies (root + backend + frontend) |
-| `npm run kill-ports` | Free ports 3000/9000 if a server is stuck (Windows) |
+| `npm run kill-ports` | Free ports 3001/3000/9000 if a server is stuck (Windows) |
 
 Production build of the frontend: `cd frontend/breadBank && npm run build` (outputs static files to `dist/spa`).
 
@@ -174,6 +176,11 @@ The `database/*.sql` files already create the **complete** schema, so a fresh in
 
 - `migrate*.ts` — incremental schema migrations (already folded into `01_schema.sql`; only needed to upgrade an **older** database in place).
 - `dedupeTransactions.ts`, `dedupePlaidItems.ts`, `cleanupDuplicateAccounts.ts` — clean up duplicate data (e.g. after re-linking a bank or mixing CSV + Plaid). Each runs a dry run first; pass `apply` to commit.
+- `addMerchantRule.ts` — add a description→category rule so future imports auto-file a recurring payee, and backfill existing matches. Idempotent. Use the *stable* part of the description (no dates/ref numbers):
+  ```bash
+  cd backend
+  npx ts-node src/scripts/addMerchantRule.ts "ZELLE FROM JANE DOE" "Rent"
+  ```
 - `inspect*.ts` — read-only diagnostics.
 
 ---
@@ -184,6 +191,7 @@ The `database/*.sql` files already create the **complete** schema, so a fresh in
 - **Secrets stay local.** `backend/.env` and `frontend/breadBank/.env` are gitignored and never committed — your API keys, DB password, and tokens live only on your machine. Only the `.env.example` templates are in the repo.
 - **The seeded accounts are just examples.** `database/02_seed.sql` adds sample accounts (Wells Fargo, Apple Card, Discover, Fidelity, Robinhood) so you can start uploading CSVs right away. Ignore them, upload into them, or replace them — they hold no data until you add transactions.
 - **First run = create an account.** There's no default login; click **Create an account** on first launch. Each registered user only sees their own data.
+- **Splitting bills / refunds.** Money coming back to you isn't income — file it under the **same category as the expense**. A roommate Zelling you their share of rent into your **Rent** category (or a store refund into **Shopping**) automatically reduces that category's spending rather than inflating your income. Only credits in the **Income** category count as income. For a recurring payer, add a forward rule once (see [`addMerchantRule.ts`](#backendsrcscripts)) so every future payment is filed automatically.
 
 ---
 
@@ -191,9 +199,9 @@ The `database/*.sql` files already create the **complete** schema, so a fresh in
 
 - **`DB_PASSWORD env var is required`** → you didn't fill `backend/.env`.
 - **Login/connection fails** → confirm SQL Server allows **SQL authentication**, the `breadbank_user` login exists, and it's a user in the `breadbank` database (step 2).
-- **`Port 3000/9000 already in use`** → `npm run kill-ports`, then `npm run dev`.
+- **`Port 3001/9000 already in use`** → `npm run kill-ports`, then `npm run dev`.
 - **AI features error** → check `ANTHROPIC_API_KEY` and that your Anthropic account has credit (the Settings page shows usage + a low-credit warning).
-- **Reaching it from your phone** → run on the same Wi-Fi, set `VITE_API_URL` to your PC's LAN IP, add that origin to `CORS_ORIGIN`, and allow ports 3000/9000 through the firewall.
+- **Reaching it from your phone** → run on the same Wi-Fi, set `VITE_API_URL` to your PC's LAN IP, add that origin to `CORS_ORIGIN`, and allow ports 3001/9000 through the firewall.
 
 ## Security notes
 

@@ -231,6 +231,94 @@ Return ONLY a JSON array of 3 strings:
   }
 }
 
+// ── Budget plan generation ─────────────────────────────────────────
+
+export interface BudgetPlanCategory {
+  categoryId: number;
+  name: string;
+  lastMonthSpent: number;
+}
+export interface BudgetPlanItem {
+  categoryId: number;
+  suggestedLimit: number;
+  note: string;
+}
+
+// Essentials get trimmed gently; discretionary categories absorb most of the cut.
+const ESSENTIAL_CATEGORIES = new Set([
+  'Housing', 'Groceries', 'Health & Medical', 'Transportation', 'Education',
+]);
+
+function roundTo5(n: number): number {
+  return Math.max(5, Math.round(n / 5) * 5);
+}
+
+// Deterministic fallback used when the AI is unavailable (e.g. out of credit):
+// flat-trim discretionary categories by the target, essentials by a third of it.
+function fallbackBudgetPlan(cats: BudgetPlanCategory[], reductionPercent: number): BudgetPlanItem[] {
+  const r = Math.min(Math.max(reductionPercent, 0), 90) / 100;
+  return cats.map((c) => {
+    const essential = ESSENTIAL_CATEGORIES.has(c.name);
+    const cut = essential ? r / 3 : r;
+    return {
+      categoryId: c.categoryId,
+      suggestedLimit: roundTo5(c.lastMonthSpent * (1 - cut)),
+      note: essential ? 'Essential — trimmed lightly' : `Trimmed ~${Math.round(cut * 100)}%`,
+    };
+  });
+}
+
+export async function generateBudgetPlan(
+  cats: BudgetPlanCategory[],
+  reductionPercent: number,
+): Promise<BudgetPlanItem[]> {
+  if (cats.length === 0) return [];
+
+  const prompt = `You are a personal finance budgeting assistant. Based on last month's spending per category, propose a realistic monthly budget for each category that reduces total spending by about ${reductionPercent}% overall.
+
+Guidelines:
+- Protect essentials (Housing, Groceries, Health & Medical, Transportation, Education) — trim these little or not at all.
+- Trim discretionary categories (Food & Dining, Entertainment, Shopping, Subscriptions, Travel) more aggressively to reach the overall target.
+- Never set a budget above last month's spend for that category.
+- Round every budget to the nearest $5.
+- Keep each budget at least $5.
+
+Categories (last month spend):
+${cats.map((c) => `- id ${c.categoryId} | ${c.name} | $${c.lastMonthSpent.toFixed(2)}`).join('\n')}
+
+Return ONLY a JSON array (no markdown, no explanation), one object per category id above:
+[{"categoryId":1,"suggestedLimit":120,"note":"short reason (<=6 words)"}]`;
+
+  try {
+    const response = await callClaude({
+      model: 'claude-opus-4-8',
+      max_tokens: 1024,
+      messages: [{ role: 'user', content: prompt }],
+    });
+
+    const text = response.content[0]?.type === 'text' ? response.content[0].text.trim() : '[]';
+    const parsed = JSON.parse(text) as BudgetPlanItem[];
+
+    // Trust the category set, not the model: only keep ids we asked about, clamp
+    // each limit to [5, lastMonthSpent], and backfill anything the model dropped.
+    const byId = new Map(parsed.map((p) => [Number(p.categoryId), p]));
+    return cats.map((c) => {
+      const ai = byId.get(c.categoryId);
+      const raw = ai ? Number(ai.suggestedLimit) : c.lastMonthSpent * (1 - reductionPercent / 100);
+      const capped = Math.min(Number.isFinite(raw) ? raw : c.lastMonthSpent, c.lastMonthSpent);
+      return {
+        categoryId: c.categoryId,
+        suggestedLimit: roundTo5(capped),
+        note: ai?.note ?? 'Suggested limit',
+      };
+    });
+  } catch {
+    // Out of credit or malformed response — fall back to a deterministic plan so
+    // the feature still works without the AI.
+    return fallbackBudgetPlan(cats, reductionPercent);
+  }
+}
+
 // ── Natural language Q&A ───────────────────────────────────────────
 
 export async function answerFinanceQuestion(question: string, context: string): Promise<string> {

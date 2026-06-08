@@ -57,16 +57,16 @@
 
       <!-- List -->
       <div v-else class="bb-subs-list">
-        <div class="bb-subs-head row no-wrap">
-          <div class="col-4">Merchant</div>
-          <div class="col-2">Frequency</div>
-          <div class="col-2 bb-num">Typical</div>
-          <div class="col-2 bb-num">Per month</div>
-          <div class="col-2 bb-num">Next charge</div>
+        <div class="bb-subs-grid bb-subs-head">
+          <div class="bb-sc-merchant">Merchant</div>
+          <div class="bb-sc-freq">Frequency</div>
+          <div class="bb-sc-typical bb-num">Typical</div>
+          <div class="bb-sc-monthly bb-num">Per month</div>
+          <div class="bb-sc-next bb-num">Next charge</div>
         </div>
 
-        <div v-for="sub in subscriptions" :key="sub.merchant" class="bb-sub-row row no-wrap">
-          <div class="col-4 bb-sub-merchant">
+        <div v-for="sub in subscriptions" :key="sub.merchant" class="bb-subs-grid bb-sub-row">
+          <div class="bb-sc-merchant bb-sub-merchant">
             <div class="bb-sub-icon" :style="{ background: (sub.categoryColor ?? '#6C4ED4') + '33', color: sub.categoryColor ?? '#8B6FEC' }">
               <q-icon name="autorenew" size="16px" />
             </div>
@@ -78,12 +78,12 @@
               </div>
             </div>
           </div>
-          <div class="col-2">
+          <div class="bb-sc-freq">
             <span class="bb-cadence-chip">{{ cadenceLabel(sub.cadence) }}</span>
           </div>
-          <div class="col-2 bb-num bb-sub-amt">{{ fmt(sub.averageAmount) }}</div>
-          <div class="col-2 bb-num bb-sub-monthly">{{ fmt(sub.monthlyCost) }}</div>
-          <div class="col-2 bb-num bb-sub-next">{{ fmtDate(sub.nextEstimatedDate) }}</div>
+          <div class="bb-sc-typical bb-num bb-sub-amt">{{ fmt(sub.averageAmount) }}</div>
+          <div class="bb-sc-monthly bb-num bb-sub-monthly">{{ fmt(sub.monthlyCost) }}</div>
+          <div class="bb-sc-next bb-num bb-sub-next">{{ fmtDate(sub.nextEstimatedDate) }}</div>
         </div>
       </div>
 
@@ -156,12 +156,19 @@ onMounted(loadSubscriptions);
 .bb-empty-title { font-size: 18px; font-weight: 700; }
 .bb-empty-sub { color: #8F8FB5; max-width: 460px; font-size: 13px; }
 
-.bb-subs-list { background: #11112A; border: 1px solid rgba(255,255,255,0.06); border-radius: 18px; overflow: hidden; }
-.bb-subs-head, .bb-sub-row { display: flex; align-items: center; gap: 12px; padding: 14px 20px; }
+.bb-subs-list { background: #11112A; border: 1px solid rgba(255,255,255,0.06); border-radius: 18px; overflow-x: auto; }
+// Fixed-width columns with a flexible Merchant column. A min-width keeps the
+// columns from crushing into each other — the table scrolls sideways instead.
+.bb-subs-grid { display: flex; align-items: center; gap: 16px; padding: 14px 20px; min-width: 640px; }
+.bb-sc-merchant { flex: 1; min-width: 0; }
+.bb-sc-freq     { width: 120px; flex-shrink: 0; }
+.bb-sc-typical  { width: 84px;  flex-shrink: 0; }
+.bb-sc-monthly  { width: 90px;  flex-shrink: 0; }
+.bb-sc-next     { width: 104px; flex-shrink: 0; }
 .bb-subs-head { background: #0F0F26; color: #8F8FB5; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; border-bottom: 1px solid rgba(255,255,255,0.06); }
 .bb-sub-row { border-bottom: 1px solid rgba(255,255,255,0.04); }
 .bb-sub-row:last-child { border-bottom: none; }
-.bb-num { text-align: right; justify-content: flex-end; }
+.bb-num { text-align: right; white-space: nowrap; }
 
 .bb-sub-merchant { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .bb-sub-icon { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; flex-shrink: 0; }

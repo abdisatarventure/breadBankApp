@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import { getPool, sql } from '../config/db';
 import { AuthRequest } from '../middleware/auth';
+import { SPEND_AMOUNT, INCOME_AMOUNT, NET_SPEND, SPENDING_FILTER } from '../config/spending';
 import {
   generateMonthlySummary,
   generateSuggestions,
@@ -67,40 +68,42 @@ router.post('/summary', async (req: AuthRequest, res: Response) => {
     const [cur, prev, topCat, topMerch, subs, cats] = await Promise.all([
       pool.request().input('userId', sql.Int, userId).input('s', sql.Date, start).input('e', sql.Date, end).query(`
         SELECT
-          SUM(CASE WHEN t.type='debit'  THEN t.amount ELSE 0 END) AS spending,
-          SUM(CASE WHEN t.type='credit' THEN t.amount ELSE 0 END) AS income
+          SUM(${SPEND_AMOUNT})  AS spending,
+          SUM(${INCOME_AMOUNT}) AS income
         FROM transactions t LEFT JOIN categories c ON t.category_id = c.id
-        WHERE t.user_id = @userId AND t.date BETWEEN @s AND @e AND ISNULL(c.name,'') <> 'Transfer'
+        WHERE t.user_id = @userId AND t.date BETWEEN @s AND @e
       `),
       pool.request().input('userId', sql.Int, userId).input('s', sql.Date, prevStart).input('e', sql.Date, prevEnd).query(`
-        SELECT SUM(CASE WHEN t.type='debit' THEN t.amount ELSE 0 END) AS spending
+        SELECT SUM(${SPEND_AMOUNT}) AS spending
         FROM transactions t LEFT JOIN categories c ON t.category_id = c.id
-        WHERE t.user_id = @userId AND t.date BETWEEN @s AND @e AND ISNULL(c.name,'') <> 'Transfer'
+        WHERE t.user_id = @userId AND t.date BETWEEN @s AND @e
       `),
       pool.request().input('userId', sql.Int, userId).input('s', sql.Date, start).input('e', sql.Date, end).query(`
-        SELECT TOP 1 c.name, SUM(t.amount) AS total
+        SELECT TOP 1 c.name, SUM(${NET_SPEND}) AS total
         FROM transactions t JOIN categories c ON t.category_id = c.id
-        WHERE t.user_id = @userId AND t.date BETWEEN @s AND @e AND t.type='debit' AND c.name <> 'Transfer'
-        GROUP BY c.name ORDER BY total DESC
+        WHERE t.user_id = @userId AND t.date BETWEEN @s AND @e AND ${SPENDING_FILTER}
+        GROUP BY c.name HAVING SUM(${NET_SPEND}) > 0 ORDER BY total DESC
       `),
       pool.request().input('userId', sql.Int, userId).input('s', sql.Date, start).input('e', sql.Date, end).query(`
-        SELECT TOP 1 t.merchant, SUM(t.amount) AS total
+        SELECT TOP 1 t.merchant, SUM(${NET_SPEND}) AS total
         FROM transactions t LEFT JOIN categories c ON t.category_id = c.id
-        WHERE t.user_id = @userId AND t.date BETWEEN @s AND @e AND t.type='debit'
+        WHERE t.user_id = @userId AND t.date BETWEEN @s AND @e
           AND t.merchant IS NOT NULL AND t.merchant != ''
-          AND ISNULL(c.name,'') <> 'Transfer'
-        GROUP BY t.merchant ORDER BY total DESC
+          AND ${SPENDING_FILTER}
+        GROUP BY t.merchant HAVING SUM(${NET_SPEND}) > 0 ORDER BY total DESC
       `),
       pool.request().input('userId', sql.Int, userId).input('s', sql.Date, start).input('e', sql.Date, end).query(`
-        SELECT COUNT(*) AS cnt, COALESCE(SUM(t.amount),0) AS total
+        SELECT
+          SUM(CASE WHEN t.type='debit' THEN 1 ELSE 0 END) AS cnt,
+          COALESCE(SUM(${NET_SPEND}),0) AS total
         FROM transactions t JOIN categories c ON t.category_id = c.id
         WHERE t.user_id = @userId AND c.name='Subscriptions' AND t.date BETWEEN @s AND @e
       `),
       pool.request().input('userId', sql.Int, userId).input('s', sql.Date, start).input('e', sql.Date, end).query(`
-        SELECT c.name AS category, SUM(t.amount) AS amount
+        SELECT c.name AS category, SUM(${NET_SPEND}) AS amount
         FROM transactions t JOIN categories c ON t.category_id = c.id
-        WHERE t.user_id = @userId AND t.date BETWEEN @s AND @e AND t.type='debit' AND c.name <> 'Transfer'
-        GROUP BY c.name ORDER BY amount DESC
+        WHERE t.user_id = @userId AND t.date BETWEEN @s AND @e AND ${SPENDING_FILTER}
+        GROUP BY c.name HAVING SUM(${NET_SPEND}) > 0 ORDER BY amount DESC
       `),
     ]);
 
@@ -149,16 +152,16 @@ router.post('/chat', async (req: AuthRequest, res: Response) => {
     const [recent, topCats] = await Promise.all([
       pool.request().input('userId', sql.Int, userId).query(`
         SELECT
-          SUM(CASE WHEN t.type='debit'  THEN t.amount ELSE 0 END) AS spending,
-          SUM(CASE WHEN t.type='credit' THEN t.amount ELSE 0 END) AS income
+          SUM(${SPEND_AMOUNT})  AS spending,
+          SUM(${INCOME_AMOUNT}) AS income
         FROM transactions t LEFT JOIN categories c ON t.category_id = c.id
-        WHERE t.user_id = @userId AND t.date >= DATEADD(MONTH,-1,GETDATE()) AND ISNULL(c.name,'') <> 'Transfer'
+        WHERE t.user_id = @userId AND t.date >= DATEADD(MONTH,-1,GETDATE())
       `),
       pool.request().input('userId', sql.Int, userId).query(`
-        SELECT TOP 5 c.name, SUM(t.amount) AS total
+        SELECT TOP 5 c.name, SUM(${NET_SPEND}) AS total
         FROM transactions t JOIN categories c ON t.category_id = c.id
-        WHERE t.user_id = @userId AND t.date >= DATEADD(MONTH,-1,GETDATE()) AND t.type='debit' AND c.name <> 'Transfer'
-        GROUP BY c.name ORDER BY total DESC
+        WHERE t.user_id = @userId AND t.date >= DATEADD(MONTH,-1,GETDATE()) AND ${SPENDING_FILTER}
+        GROUP BY c.name HAVING SUM(${NET_SPEND}) > 0 ORDER BY total DESC
       `),
     ]);
 

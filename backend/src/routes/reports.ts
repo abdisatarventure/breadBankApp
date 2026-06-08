@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import { getPool, sql } from '../config/db';
 import { AuthRequest } from '../middleware/auth';
+import { SPEND_AMOUNT, NET_SPEND, SPENDING_FILTER } from '../config/spending';
 
 const router = Router();
 
@@ -24,17 +25,17 @@ router.get('/', async (req: AuthRequest, res: Response) => {
         .query(`
           SELECT TOP 6
             t.merchant,
-            SUM(t.amount) AS total,
+            SUM(${NET_SPEND}) AS total,
             COUNT(*) AS txCount
           FROM transactions t
           LEFT JOIN categories c ON t.category_id = c.id
           WHERE t.user_id = @userId
-            AND t.type = 'debit'
             AND t.date >= @start
             AND t.merchant IS NOT NULL
             AND t.merchant != ''
-            AND ISNULL(c.name, '') <> 'Transfer'
+            AND ${SPENDING_FILTER}
           GROUP BY t.merchant
+          HAVING SUM(${NET_SPEND}) > 0
           ORDER BY total DESC
         `),
 
@@ -47,14 +48,13 @@ router.get('/', async (req: AuthRequest, res: Response) => {
         .input('sameMonthLastYearEnd', sql.Date, sameMonthLastYearEnd)
         .query(`
           SELECT
-            SUM(CASE WHEN t.date >= @currentYearStart AND t.type = 'debit' THEN t.amount ELSE 0 END) AS currentYearTotal,
-            SUM(CASE WHEN t.date >= @priorYearStart AND t.date < @currentYearStart AND t.type = 'debit' THEN t.amount ELSE 0 END) AS priorYearTotal,
-            SUM(CASE WHEN t.date >= @currentMonthStart AND t.type = 'debit' THEN t.amount ELSE 0 END) AS currentMonthTotal,
-            SUM(CASE WHEN t.date >= @sameMonthLastYearStart AND t.date <= @sameMonthLastYearEnd AND t.type = 'debit' THEN t.amount ELSE 0 END) AS priorMonthTotal
+            SUM(CASE WHEN t.date >= @currentYearStart THEN ${SPEND_AMOUNT} ELSE 0 END) AS currentYearTotal,
+            SUM(CASE WHEN t.date >= @priorYearStart AND t.date < @currentYearStart THEN ${SPEND_AMOUNT} ELSE 0 END) AS priorYearTotal,
+            SUM(CASE WHEN t.date >= @currentMonthStart THEN ${SPEND_AMOUNT} ELSE 0 END) AS currentMonthTotal,
+            SUM(CASE WHEN t.date >= @sameMonthLastYearStart AND t.date <= @sameMonthLastYearEnd THEN ${SPEND_AMOUNT} ELSE 0 END) AS priorMonthTotal
           FROM transactions t
           LEFT JOIN categories c ON t.category_id = c.id
           WHERE t.user_id = @userId
-            AND ISNULL(c.name, '') <> 'Transfer'
         `),
 
       pool.request()
@@ -67,24 +67,22 @@ router.get('/', async (req: AuthRequest, res: Response) => {
             ISNULL(cur.total, 0) AS thisYearTotal,
             ISNULL(prev.total, 0) AS lastYearTotal
           FROM (
-            SELECT c.name AS category, SUM(t.amount) AS total
+            SELECT c.name AS category, SUM(${NET_SPEND}) AS total
             FROM transactions t
             JOIN categories c ON t.category_id = c.id
             WHERE t.user_id = @userId
-              AND t.type = 'debit'
               AND t.date >= @currentYearStart
-              AND c.name <> 'Transfer'
+              AND ${SPENDING_FILTER}
             GROUP BY c.name
           ) cur
           FULL OUTER JOIN (
-            SELECT c.name AS category, SUM(t.amount) AS total
+            SELECT c.name AS category, SUM(${NET_SPEND}) AS total
             FROM transactions t
             JOIN categories c ON t.category_id = c.id
             WHERE t.user_id = @userId
-              AND t.type = 'debit'
               AND t.date >= @priorYearStart
               AND t.date < @currentYearStart
-              AND c.name <> 'Transfer'
+              AND ${SPENDING_FILTER}
             GROUP BY c.name
           ) prev ON cur.category = prev.category
           ORDER BY ISNULL(cur.total, 0) + ISNULL(prev.total, 0) DESC;

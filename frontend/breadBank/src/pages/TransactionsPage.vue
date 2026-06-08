@@ -346,8 +346,9 @@ onMounted(async () => {
 }
 
 .bb-tx-table { border-radius: 12px; overflow-x: auto; border: 1px solid rgba(255,255,255,0.06); }
-// Keep the columns from crushing on phones — scroll the table sideways instead.
-.bb-tx-header-row, .bb-tx-row, .bb-tx-month-header { min-width: 620px; }
+// Keep the columns from crushing into each other — scroll the table sideways
+// instead once they no longer fit.
+.bb-tx-header-row, .bb-tx-row, .bb-tx-month-header { min-width: 660px; }
 
 .bb-tx-header-row {
   display: flex; align-items: center; gap: 12px; padding: 10px 16px;
@@ -373,7 +374,7 @@ onMounted(async () => {
 
 .bb-tx-col-date { width: 92px;  flex-shrink: 0; }
 .bb-tx-col-desc { flex: 1; min-width: 0; }
-.bb-tx-col-cat  { width: 140px; flex-shrink: 0; }
+.bb-tx-col-cat  { width: 140px; flex-shrink: 0; min-width: 0; overflow: hidden; }
 .bb-tx-col-acct { width: 130px; flex-shrink: 0; min-width: 0; }
 .bb-tx-col-amt  { width: 104px; flex-shrink: 0; text-align: right; font-weight: 600; font-size: 13px; white-space: nowrap; }
 
@@ -385,6 +386,7 @@ onMounted(async () => {
 .bb-cat-chip {
   font-size: 11px; font-weight: 500; padding: 3px 9px;
   border-radius: 20px; display: inline-block;
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .bb-cat-unknown { background: rgba(110,110,154,0.15) !important; color: #6E6E9A !important; }
 

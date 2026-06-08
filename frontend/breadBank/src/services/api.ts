@@ -1,6 +1,6 @@
 import { auth } from 'src/services/auth';
 
-const BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:3000/api';
+const BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:3001/api';
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const token = auth.getToken();
@@ -145,6 +145,21 @@ export interface BudgetsData {
   suggestions: BudgetSuggestion[];
 }
 
+export interface BudgetPlanItem {
+  categoryId: number;
+  name: string;
+  icon: string;
+  color: string;
+  lastMonthSpent: number;
+  suggestedLimit: number;
+  note: string;
+}
+
+export interface BudgetPlan {
+  plan: BudgetPlanItem[];
+  reductionPercent: number;
+}
+
 export interface Account {
   id: number;
   name: string;
@@ -282,6 +297,10 @@ export const api = {
   getBudgets: () => request<BudgetsData>('/budgets'),
   setBudget: (categoryId: number, limit: number) =>
     request<{ success: boolean }>('/budgets', { method: 'PUT', body: JSON.stringify({ categoryId, limit }) }),
+  setBudgetsBulk: (items: { categoryId: number; limit: number }[]) =>
+    request<{ success: boolean; updated: number }>('/budgets/bulk', { method: 'PUT', body: JSON.stringify({ items }) }),
+  generateBudgetPlan: (reductionPercent: number) =>
+    request<BudgetPlan>('/budgets/generate', { method: 'POST', body: JSON.stringify({ reductionPercent }) }),
   deleteBudget: (categoryId: number) =>
     request<{ success: boolean }>(`/budgets/${categoryId}`, { method: 'DELETE' }),
 
