@@ -78,13 +78,71 @@
 
             <div class="bb-form-links">
               <span class="bb-link" @click="router.push('/register')">Create an account</span>
-              <span class="bb-link" @click="showForgotNotice">Forgot your password?</span>
+              <span class="bb-link" @click="openForgot">Forgot your password?</span>
             </div>
           </q-form>
         </div>
       </div>
 
     </div>
+
+    <!-- Forgot-password dialog -->
+    <q-dialog v-model="forgotOpen">
+      <q-card class="bb-forgot-card" dark>
+        <div class="bb-forgot-title">Reset password</div>
+
+        <q-banner v-if="forgotError" class="bb-error-banner q-mb-md" dense rounded>
+          {{ forgotError }}
+        </q-banner>
+
+        <template v-if="forgotStep === 'email'">
+          <div class="bb-forgot-sub">Enter your email and we'll show your security question.</div>
+          <q-input
+            v-model="forgotEmail"
+            type="email"
+            placeholder="Email"
+            outlined dense dark
+            class="bb-forgot-input"
+            @keyup.enter="fetchQuestion"
+          />
+          <q-btn
+            no-caps unelevated label="Continue"
+            class="bb-login-btn full-width q-mt-md"
+            :loading="forgotLoading"
+            @click="fetchQuestion"
+          />
+        </template>
+
+        <template v-else>
+          <div class="bb-forgot-sub">{{ forgotQuestion }}</div>
+          <q-input
+            v-model="forgotAnswer"
+            type="text"
+            placeholder="Your answer"
+            outlined dense dark
+            class="bb-forgot-input q-mb-sm"
+          />
+          <q-input
+            v-model="forgotNewPwd"
+            type="password"
+            placeholder="New password (min 8 chars)"
+            outlined dense dark
+            class="bb-forgot-input"
+            @keyup.enter="submitReset"
+          />
+          <q-btn
+            no-caps unelevated label="Reset password"
+            class="bb-login-btn full-width q-mt-md"
+            :loading="forgotLoading"
+            @click="submitReset"
+          />
+        </template>
+
+        <div class="text-center q-mt-md">
+          <span class="bb-link" @click="forgotOpen = false">Cancel</span>
+        </div>
+      </q-card>
+    </q-dialog>
   </div>
 </template>
 
@@ -102,13 +160,65 @@ const errorMessage = ref('');
 const router = useRouter();
 const $q = useQuasar();
 
-function showForgotNotice() {
-  $q.notify({
-    message: 'Password reset is not yet available. Please contact your admin for help.',
-    color: 'purple-8',
-    position: 'top',
-    timeout: 4000,
-  });
+// ── Forgot-password (security question) dialog ────────────────────────
+const forgotOpen = ref(false);
+const forgotStep = ref<'email' | 'reset'>('email');
+const forgotEmail = ref('');
+const forgotQuestion = ref('');
+const forgotAnswer = ref('');
+const forgotNewPwd = ref('');
+const forgotError = ref('');
+const forgotLoading = ref(false);
+
+function openForgot() {
+  forgotStep.value = 'email';
+  forgotEmail.value = email.value.trim();
+  forgotQuestion.value = '';
+  forgotAnswer.value = '';
+  forgotNewPwd.value = '';
+  forgotError.value = '';
+  forgotOpen.value = true;
+}
+
+async function fetchQuestion() {
+  forgotError.value = '';
+  if (!forgotEmail.value.trim()) {
+    forgotError.value = 'Enter your email first.';
+    return;
+  }
+  forgotLoading.value = true;
+  try {
+    const { question } = await auth.getSecurityQuestion(forgotEmail.value);
+    forgotQuestion.value = question;
+    forgotStep.value = 'reset';
+  } catch (err) {
+    forgotError.value = err instanceof Error ? err.message : 'Could not find a security question for that email.';
+  } finally {
+    forgotLoading.value = false;
+  }
+}
+
+async function submitReset() {
+  forgotError.value = '';
+  if (!forgotAnswer.value.trim() || !forgotNewPwd.value.trim()) {
+    forgotError.value = 'Enter your answer and a new password.';
+    return;
+  }
+  if (forgotNewPwd.value.length < 8) {
+    forgotError.value = 'New password must be at least 8 characters.';
+    return;
+  }
+  forgotLoading.value = true;
+  try {
+    await auth.resetPassword(forgotEmail.value, forgotAnswer.value, forgotNewPwd.value);
+    forgotOpen.value = false;
+    email.value = forgotEmail.value;
+    $q.notify({ message: 'Password reset — you can sign in now.', color: 'green-8', position: 'top', timeout: 4000 });
+  } catch (err) {
+    forgotError.value = err instanceof Error ? err.message : 'Could not reset your password.';
+  } finally {
+    forgotLoading.value = false;
+  }
 }
 
 const emailIsValid = computed(() => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.value));
@@ -374,6 +484,23 @@ async function handleLogin() {
   color: #ffb4b4 !important;
   border: 1px solid rgba(239, 68, 68, 0.3);
   font-size: 12.5px;
+}
+
+/* ── Forgot-password dialog ───────────────────────────────── */
+.bb-forgot-card {
+  width: 360px;
+  max-width: 90vw;
+  padding: 28px 26px;
+  background: #0F1030 !important;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+}
+.bb-forgot-title { font-size: 19px; font-weight: 700; color: #fff; margin-bottom: 6px; }
+.bb-forgot-sub { font-size: 13px; color: #9090B8; margin-bottom: 16px; line-height: 1.4; }
+.bb-forgot-input {
+  .q-field__control { background: rgba(255, 255, 255, 0.04) !important; }
+  &.q-field--outlined .q-field__control:before { border-color: rgba(255, 255, 255, 0.1) !important; }
+  &.q-field--focused.q-field--outlined .q-field__control:before { border-color: #6C4ED4 !important; }
 }
 
 /* ── Responsive: stack and drop the art panel on small screens ─ */

@@ -117,7 +117,7 @@
 
     <!-- Edit dialog -->
     <q-dialog v-model="editOpen">
-      <div class="bb-edit-dialog">
+      <q-card class="bb-edit-dialog">
         <div class="bb-edit-title">Edit Transaction</div>
         <div v-if="editTx" class="bb-edit-info">
           <div class="bb-edit-merchant">{{ editTx.merchant || editTx.description }}</div>
@@ -148,7 +148,7 @@
             style="background:linear-gradient(135deg,#6C4ED4,#E040FB);color:#fff;border-radius:8px;padding:6px 20px"
             @click="saveEdit" />
         </div>
-      </div>
+      </q-card>
     </q-dialog>
 
   </q-page>

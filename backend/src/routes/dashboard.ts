@@ -15,7 +15,9 @@ router.get('/', async (req: AuthRequest, res: Response) => {
     const endOfLastMo    = new Date(now.getFullYear(), now.getMonth(), 0);
     const startOfYear    = new Date(now.getFullYear(), 0, 1);
 
-    const [currentMo, lastMo, categories, trend, topMerchants, parking] = await Promise.all([
+    const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+    const [currentMo, lastMo, categories, trend, topMerchants, parking, allocated] = await Promise.all([
       pool.request()
         .input('userId', sql.Int, userId)
         .input('start', sql.Date, startOfMonth)
@@ -88,6 +90,15 @@ router.get('/', async (req: AuthRequest, res: Response) => {
             AND (t.merchant LIKE '%METROPOLIS PARKING%' OR t.description LIKE '%METROPOLIS PARKING%')
             AND ISNULL(c.name,'') <> 'Transfer'
         `),
+
+      // How much of this month's net savings has been allocated into savings goals.
+      pool.request()
+        .input('userId', sql.Int, userId)
+        .input('mk', sql.Char(7), monthKey)
+        .query(`
+          SELECT ISNULL(SUM(amount), 0) AS allocated
+          FROM savings_contributions WHERE user_id = @userId AND month_key = @mk
+        `),
     ]);
 
     const s = currentMo.recordset[0] as { totalSpending: number; totalIncome: number } | undefined;
@@ -97,12 +108,17 @@ router.get('/', async (req: AuthRequest, res: Response) => {
     const savingsRate = income > 0 ? (savings / income) * 100 : 0;
     const prevSpend   = (lastMo.recordset[0] as { totalSpending: number } | undefined)?.totalSpending ?? 0;
     const park        = parking.recordset[0] as { monthTotal: number; monthTxCount: number; yearTotal: number } | undefined;
+    const allocatedToGoals = Number((allocated.recordset[0] as { allocated: number } | undefined)?.allocated ?? 0);
 
     res.json({
       totalSpending:          spending,
       totalIncome:            income,
       netSavings:             savings,
       savingsRate,
+      // Net Savings itself is untouched; this just reports how much of it is still
+      // free to put into savings goals (drives the dashboard's "unallocated" hint).
+      allocatedToGoals,
+      unallocatedSavings:     Math.max(0, savings - allocatedToGoals),
       previousMonthSpending:  prevSpend,
       categoryBreakdown:      categories.recordset,
       monthlyTrend:           trend.recordset,

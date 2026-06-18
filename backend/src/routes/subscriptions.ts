@@ -159,6 +159,15 @@ router.get('/', async (req: AuthRequest, res: Response) => {
       const cadence: Cadence = detected ? band!.cadence : 'monthly';
 
       const last = daily[daily.length - 1]!;
+
+      // "Active" = still charging. Drop anything whose most recent charge is
+      // older than ~1.5 of its own billing cycles — a service cancelled months
+      // ago, or a recurring merchant from a prior-year backfill (e.g. 2025), is
+      // not a CURRENT subscription. This keeps the list to what you pay now.
+      const daysSinceLast = Math.round((Date.now() - last.date.getTime()) / 86_400_000);
+      const activeWindow = Math.max(period * 1.5, 45);
+      if (daysSinceLast > activeWindow) continue;
+
       const nextEstimated = new Date(last.date);
       nextEstimated.setDate(nextEstimated.getDate() + period);
 

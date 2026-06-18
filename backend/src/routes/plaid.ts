@@ -475,6 +475,7 @@ async function categorize(
   for (let i = 0; i < needsAI.length; i += BATCH) {
     const batch = needsAI.slice(i, i + BATCH);
     const results = await categorizeTransactions(
+      userId,
       batch.map((t) => ({ description: t.name, amount: t.amount })),
     );
     for (let j = 0; j < batch.length; j++) {

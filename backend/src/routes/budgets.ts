@@ -165,6 +165,7 @@ router.post('/generate', async (req: AuthRequest, res: Response) => {
     }
 
     const limits = await generateBudgetPlan(
+      userId!,
       cats.map((c) => ({ categoryId: c.categoryId, name: c.name, lastMonthSpent: c.lastMonthSpent })),
       reduction,
     );

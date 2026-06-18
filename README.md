@@ -70,7 +70,7 @@ In SQL Server, create a login the app will use, then run the schema scripts.
 CREATE LOGIN breadbank_user WITH PASSWORD = 'ChangeMe!StrongPassword1';
 ```
 
-Then run the three files in `database/` **in order** (skip `00_reset.sql` on a fresh install):
+Then run the two schema files in `database/` **in order** (skip `00_reset.sql` on a fresh install):
 
 ```
 database/01_schema.sql   -- creates the breadbank DB + all tables
@@ -181,6 +181,7 @@ The `database/*.sql` files already create the **complete** schema, so a fresh in
   cd backend
   npx ts-node src/scripts/addMerchantRule.ts "ZELLE FROM JANE DOE" "Rent"
   ```
+- `migrateMultiUser.ts` — upgrade an **older** single-user database to full per-user data separation: gives each user their own copy of the seeded accounts, and makes Claude usage + the AI budget per-user. Idempotent; fresh installs don't need it.
 - `inspect*.ts` — read-only diagnostics.
 
 ---
@@ -189,8 +190,10 @@ The `database/*.sql` files already create the **complete** schema, so a fresh in
 
 - **Bring your own keys.** Everyone runs BreadBank with their **own** credentials. `ANTHROPIC_API_KEY` is required for the AI features; generate your own `JWT_SECRET` and `PLAID_ENC_KEY` (one-liners in [step 3](#3-configure-the-backend)). Plaid is optional — without it, everything except live bank linking still works.
 - **Secrets stay local.** `backend/.env` and `frontend/breadBank/.env` are gitignored and never committed — your API keys, DB password, and tokens live only on your machine. Only the `.env.example` templates are in the repo.
-- **The seeded accounts are just examples.** `database/02_seed.sql` adds sample accounts (Wells Fargo, Apple Card, Discover, Fidelity, Robinhood) so you can start uploading CSVs right away. Ignore them, upload into them, or replace them — they hold no data until you add transactions.
-- **First run = create an account.** There's no default login; click **Create an account** on first launch. Each registered user only sees their own data.
+- **Every user gets their own starter accounts.** When you register, BreadBank creates a private set of example accounts for you (Wells Fargo, Apple Card, Discover, Fidelity, Robinhood) so you can start uploading CSVs right away. Ignore them, upload into them, or replace them — they hold no data until you add transactions, and they're never shared with other users.
+- **Your data is fully separated per user.** Transactions, accounts, budgets, merchant rules, linked banks, AI spend, and the AI budget are all scoped to the signed-in user — nothing bleeds across accounts. Upgrading a database created before this change? Run `npx ts-node src/scripts/migrateMultiUser.ts` once (see [`backend/src/scripts/`](#backendsrcscripts)).
+- **First run = create an account.** There's no default login; click **Create an account** on first launch. You'll also pick a **security question** — it's what lets you reset your own password later (set or change it anytime under Settings → Security question).
+- **Forgot your password?** On the login screen, click **Forgot your password?**, enter your email, answer your security question, and set a new one. No email server required.
 - **Splitting bills / refunds.** Money coming back to you isn't income — file it under the **same category as the expense**. A roommate Zelling you their share of rent into your **Rent** category (or a store refund into **Shopping**) automatically reduces that category's spending rather than inflating your income. Only credits in the **Income** category count as income. For a recurring payer, add a forward rule once (see [`addMerchantRule.ts`](#backendsrcscripts)) so every future payment is filed automatically.
 
 ---
@@ -201,6 +204,7 @@ The `database/*.sql` files already create the **complete** schema, so a fresh in
 - **Login/connection fails** → confirm SQL Server allows **SQL authentication**, the `breadbank_user` login exists, and it's a user in the `breadbank` database (step 2).
 - **`Port 3001/9000 already in use`** → `npm run kill-ports`, then `npm run dev`.
 - **AI features error** → check `ANTHROPIC_API_KEY` and that your Anthropic account has credit (the Settings page shows usage + a low-credit warning).
+- **Forgot password / "No security question is set"** → reset needs a security question on the account. If you registered before this feature, sign in and set one under **Settings → Security question**, or reset directly in SQL: `UPDATE users SET password = '<bcrypt-hash>' WHERE email = '...'`.
 - **Reaching it from your phone** → run on the same Wi-Fi, set `VITE_API_URL` to your PC's LAN IP, add that origin to `CORS_ORIGIN`, and allow ports 3001/9000 through the firewall.
 
 ## Security notes

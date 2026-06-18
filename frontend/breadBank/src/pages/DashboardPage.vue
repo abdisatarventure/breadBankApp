@@ -168,6 +168,9 @@
             <div class="bb-savings-bar-wrap">
               <div class="bb-savings-bar" :style="{ width: Math.min(dash?.savingsRate ?? 0, 100) + '%' }" />
             </div>
+            <router-link to="/app/goals" class="bb-unallocated">
+              {{ money(dash?.unallocatedSavings ?? 0) }} unallocated →
+            </router-link>
           </div>
         </div>
 
@@ -263,7 +266,7 @@
               </div>
               <q-btn flat round dense icon="more_vert" size="sm" style="color:#6E6E9A" />
             </div>
-            <VueApexCharts v-if="hasCategoryData" type="bar" height="280" :options="categoryOpts" :series="categorySeries" />
+            <VueApexCharts v-if="hasCategoryData" :key="`cat-${hideAmounts}`" type="bar" height="280" :options="categoryOpts" :series="categorySeries" />
             <div v-else class="bb-chart-empty">
               <q-icon name="pie_chart" size="34px" style="color:#6C4ED4;opacity:0.4" />
               <span>No spending recorded yet this month.</span>
@@ -281,7 +284,7 @@
               </div>
               <q-btn flat round dense icon="more_vert" size="sm" style="color:#6E6E9A" />
             </div>
-            <VueApexCharts type="area" height="280" :options="trendOpts" :series="trendSeries" />
+            <VueApexCharts :key="`trend-${hideAmounts}`" type="area" height="280" :options="trendOpts" :series="trendSeries" />
           </div>
         </div>
 
@@ -611,4 +614,9 @@ const categoryOpts = computed<ApexOptions>(() => ({
 .bb-savings-rate { font-size: 11px; font-weight: 600; color: #22C55E; }
 .bb-savings-bar-wrap { height: 4px; background: rgba(255,255,255,0.06); border-radius: 2px; overflow: hidden; margin-top: 4px; }
 .bb-savings-bar { height: 100%; background: linear-gradient(90deg,#6C4ED4,#22C55E); border-radius: 2px; transition: width 0.6s ease; }
+.bb-unallocated {
+  display: inline-block; margin-top: 8px; font-size: 11px; font-weight: 600;
+  color: #8B6FEC; text-decoration: none;
+  &:hover { color: #B79DFF; }
+}
 </style>

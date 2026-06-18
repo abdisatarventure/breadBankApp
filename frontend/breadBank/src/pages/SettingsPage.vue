@@ -102,6 +102,43 @@
       <div v-else class="bb-set-note">No banks linked yet. Click Connect to link one through Plaid.</div>
     </div>
 
+    <!-- ── Security question (password reset) ───────────── -->
+    <div class="bb-set-card">
+      <div class="bb-set-card-hdr">
+        <q-icon name="lock" size="18px" style="color:#8B6FEC" />
+        <span>Security question</span>
+      </div>
+
+      <div class="bb-set-note q-mb-md" style="margin-top:0">
+        <template v-if="hasSecurityQ">Current question: <span style="color:#9090B8">“{{ currentQuestion }}”</span>. </template>
+        <template v-else>You haven't set one yet. </template>
+        It lets you reset your password from the login screen if you forget it.
+      </div>
+
+      <q-banner v-if="secMsg" class="bb-set-banner" :class="secOk ? 'bb-banner-amber' : 'bb-banner-red'" dense rounded>
+        {{ secMsg }}
+      </q-banner>
+
+      <div class="bb-set-metric-lbl q-mb-xs">Question</div>
+      <q-select
+        v-model="secQuestion"
+        :options="securityQuestions"
+        outlined dense dark options-dark
+        placeholder="Choose a question"
+        style="max-width:420px"
+        class="q-mb-md"
+      />
+      <div class="bb-set-metric-lbl q-mb-xs">Answer</div>
+      <q-input v-model="secAnswer" type="text" dense outlined dark
+        placeholder="New answer" style="max-width:420px" class="q-mb-md" />
+      <div class="bb-set-metric-lbl q-mb-xs">Current password (to confirm)</div>
+      <q-input v-model="secCurrentPwd" type="password" dense outlined dark
+        placeholder="Your current password" style="max-width:420px" class="q-mb-md" />
+      <q-btn no-caps unelevated :label="hasSecurityQ ? 'Update' : 'Set question'" :loading="secSaving"
+        style="background:linear-gradient(135deg,#6C4ED4,#E040FB);color:#fff;border-radius:8px"
+        @click="saveSecurity" />
+    </div>
+
     <!-- ── Account ──────────────────────────────────────── -->
     <div class="bb-set-card">
       <div class="bb-set-card-hdr">
@@ -124,10 +161,56 @@
 import { ref, computed, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { api, type AiStatus, type PlaidLinkStatus } from 'src/services/api';
-import { auth } from 'src/services/auth';
+import { auth, SECURITY_QUESTIONS } from 'src/services/auth';
 import { usePlaidLink } from 'src/composables/usePlaidLink';
 
 const router = useRouter();
+
+// ── Security question ────────────────────────────────────────
+const securityQuestions = SECURITY_QUESTIONS;
+const hasSecurityQ = ref(false);
+const currentQuestion = ref<string | null>(null);
+const secQuestion = ref<string | null>(null);
+const secAnswer = ref('');
+const secCurrentPwd = ref('');
+const secSaving = ref(false);
+const secMsg = ref('');
+const secOk = ref(false);
+
+async function loadSecurity() {
+  try {
+    const r = await auth.getMySecurity();
+    hasSecurityQ.value = r.hasSecurityQuestion;
+    currentQuestion.value = r.question;
+    if (r.question) secQuestion.value = r.question;
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+async function saveSecurity() {
+  secMsg.value = '';
+  if (!secQuestion.value || !secAnswer.value.trim() || !secCurrentPwd.value) {
+    secMsg.value = 'Choose a question, enter an answer, and your current password.';
+    secOk.value = false;
+    return;
+  }
+  secSaving.value = true;
+  try {
+    const r = await auth.setMySecurity(secCurrentPwd.value, secQuestion.value, secAnswer.value);
+    hasSecurityQ.value = r.hasSecurityQuestion;
+    currentQuestion.value = r.question;
+    secAnswer.value = '';
+    secCurrentPwd.value = '';
+    secMsg.value = 'Security question saved.';
+    secOk.value = true;
+  } catch (e) {
+    secMsg.value = e instanceof Error ? e.message : 'Failed to save security question.';
+    secOk.value = false;
+  } finally {
+    secSaving.value = false;
+  }
+}
 
 const ai           = ref<AiStatus | null>(null);
 const aiLoading    = ref(true);
@@ -218,6 +301,7 @@ function signOut() {
 onMounted(() => {
   void loadAi();
   void loadBanks();
+  void loadSecurity();
 });
 </script>
 

@@ -13,9 +13,9 @@ const router = Router();
 
 // GET /api/ai/status — token usage, estimated spend, budget, and whether the
 // Anthropic credit balance has been exhausted. Powers the Settings warning.
-router.get('/status', async (_req: AuthRequest, res: Response) => {
+router.get('/status', async (req: AuthRequest, res: Response) => {
   try {
-    res.json(await getAiStatus());
+    res.json(await getAiStatus(req.userId!));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to load AI status' });
@@ -32,14 +32,16 @@ router.put('/budget', async (req: AuthRequest, res: Response) => {
       return;
     }
     await getPool().request()
+      .input('u', sql.Int, req.userId)
       .input('v', sql.NVarChar(50), value === null ? null : String(value))
       .query(`
         MERGE app_settings AS t
-        USING (SELECT 'ai_monthly_budget' AS setting_key) AS s ON t.setting_key = s.setting_key
+        USING (SELECT @u AS user_id, 'ai_monthly_budget' AS setting_key) AS s
+          ON t.user_id = s.user_id AND t.setting_key = s.setting_key
         WHEN MATCHED THEN UPDATE SET setting_value = @v
-        WHEN NOT MATCHED THEN INSERT (setting_key, setting_value) VALUES ('ai_monthly_budget', @v);
+        WHEN NOT MATCHED THEN INSERT (user_id, setting_key, setting_value) VALUES (@u, 'ai_monthly_budget', @v);
       `);
-    res.json(await getAiStatus());
+    res.json(await getAiStatus(req.userId!));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to update budget' });
@@ -127,8 +129,8 @@ router.post('/summary', async (req: AuthRequest, res: Response) => {
     };
 
     const [summary, suggestions] = await Promise.all([
-      generateMonthlySummary(base),
-      generateSuggestions({
+      generateMonthlySummary(userId!, base),
+      generateSuggestions(userId!, {
         ...base,
         categoryBreakdown: (cats.recordset as { category: string; amount: number }[]),
         unusedSubscriptions: [],
@@ -172,7 +174,7 @@ router.post('/chat', async (req: AuthRequest, res: Response) => {
         .map(c => `${c.name} $${c.total.toFixed(2)}`).join(', ')}`,
     ].join('\n');
 
-    const answer = await answerFinanceQuestion(question, context);
+    const answer = await answerFinanceQuestion(userId!, question, context);
     res.json({ answer });
   } catch (err) {
     console.error(err);

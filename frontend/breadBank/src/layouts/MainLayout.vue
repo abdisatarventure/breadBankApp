@@ -125,6 +125,7 @@ const generalNav: NavItem[] = [
   { icon: 'receipt_long', label: 'Transactions', path: '/app/transactions' },
   { icon: 'upload_file', label: 'Upload', path: '/app/upload' },
   { icon: 'savings', label: 'Budgets', path: '/app/budgets' },
+  { icon: 'flag', label: 'Savings Goals', path: '/app/goals' },
   { icon: 'autorenew', label: 'Subscriptions', path: '/app/subscriptions' },
   { icon: 'trending_up', label: 'Investments', path: '/app/investments' },
   { icon: 'bar_chart', label: 'Reports', path: '/app/reports' },

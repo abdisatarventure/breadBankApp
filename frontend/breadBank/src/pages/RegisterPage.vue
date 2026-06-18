@@ -52,6 +52,26 @@
           </template>
         </q-input>
 
+        <div class="bb-field-label q-mt-md">Security question</div>
+        <q-select
+          v-model="securityQuestion"
+          :options="securityQuestions"
+          placeholder="Choose a question"
+          outlined dense dark
+          options-dark
+          class="bb-input q-mb-md"
+          popup-content-class="bb-select-popup"
+        />
+
+        <div class="bb-field-label">Answer</div>
+        <q-input
+          v-model="securityAnswer"
+          type="text"
+          placeholder="Used if you forget your password"
+          outlined dense dark
+          class="bb-input q-mb-md"
+        />
+
         <q-btn
           type="submit"
           no-caps unelevated
@@ -75,18 +95,26 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { useRouter } from 'vue-router';
-import { auth } from 'src/services/auth';
+import { auth, SECURITY_QUESTIONS } from 'src/services/auth';
 
 const name = ref('');
 const email = ref('');
 const password = ref('');
+const securityQuestion = ref<string | null>(null);
+const securityAnswer = ref('');
+const securityQuestions = SECURITY_QUESTIONS;
 const showPwd = ref(false);
 const loading = ref(false);
 const errorMessage = ref('');
 const router = useRouter();
 
 const emailIsValid = computed(() => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.value));
-const canSubmit = computed(() => email.value.trim().length > 0 && password.value.trim().length > 0);
+const canSubmit = computed(() =>
+  email.value.trim().length > 0 &&
+  password.value.trim().length > 0 &&
+  Boolean(securityQuestion.value) &&
+  securityAnswer.value.trim().length > 0,
+);
 
 async function handleRegister() {
   errorMessage.value = '';
@@ -101,10 +129,21 @@ async function handleRegister() {
     return;
   }
 
+  if (!securityQuestion.value || !securityAnswer.value.trim()) {
+    errorMessage.value = 'Please choose a security question and answer — it lets you reset your password later.';
+    return;
+  }
+
   loading.value = true;
 
   try {
-    await auth.register(email.value, password.value, name.value);
+    await auth.register(
+      email.value,
+      password.value,
+      name.value,
+      securityQuestion.value,
+      securityAnswer.value,
+    );
     await auth.login(email.value, password.value);
     await router.push('/app/dashboard');
   } catch (err) {

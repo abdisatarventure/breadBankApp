@@ -22,6 +22,7 @@ const routes: RouteRecordRaw[] = [
       { path: 'transactions', component: () => import('pages/TransactionsPage.vue') },
       { path: 'upload', component: () => import('pages/UploadPage.vue') },
       { path: 'budgets', component: () => import('pages/BudgetsPage.vue') },
+      { path: 'goals', component: () => import('pages/SavingsGoalsPage.vue') },
       { path: 'subscriptions', component: () => import('pages/SubscriptionsPage.vue') },
       { path: 'investments', component: () => import('pages/InvestmentsPage.vue') },
       { path: 'reports', component: () => import('pages/ReportsPage.vue') },
