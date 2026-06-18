@@ -72,7 +72,18 @@ export interface AiStatus {
   creditExhausted: boolean;
   creditExhaustedAt: string | null;
   level: 'ok' | 'warning' | 'over' | 'exhausted';
+  // Anthropic has no balance API, so we estimate: a user-set total of purchased
+  // credits (default $5) minus all-time estimated spend = remaining.
+  creditTotalUsd: number;
+  creditSpentAllTimeUsd: number;
+  creditRemainingUsd: number;
+  creditWarnAtUsd: number;
+  creditLow: boolean; // remaining <= warn threshold (or already exhausted)
 }
+
+// Defaults when the user hasn't customised them in settings.
+const DEFAULT_CREDIT_TOTAL_USD = 5;
+const DEFAULT_CREDIT_WARN_AT_USD = 1;
 
 export async function getAiStatus(userId: number): Promise<AiStatus> {
   const monthKey = currentMonthKey();
@@ -92,10 +103,31 @@ export async function getAiStatus(userId: number): Promise<AiStatus> {
   const percentUsed = monthlyBudgetUsd && monthlyBudgetUsd > 0
     ? (estCostUsd / monthlyBudgetUsd) * 100 : null;
 
+  // All-time estimated spend across every month, for the credit balance.
+  const allTime = await pool.request().input('u', sql.Int, userId)
+    .query(`SELECT ISNULL(SUM(input_tokens),0) AS i, ISNULL(SUM(output_tokens),0) AS o
+            FROM ai_usage WHERE user_id = @u`);
+  const allRow = allTime.recordset[0] as { i: number; o: number };
+  const creditSpentAllTimeUsd = Number(allRow.i) * PRICE_PER_INPUT_TOKEN + Number(allRow.o) * PRICE_PER_OUTPUT_TOKEN;
+
+  const settingsRows = await pool.request().input('u', sql.Int, userId)
+    .query(`SELECT setting_key, setting_value FROM app_settings
+            WHERE user_id = @u AND setting_key IN ('ai_credit_total', 'ai_credit_warn_at')`);
+  const settings = new Map(
+    (settingsRows.recordset as { setting_key: string; setting_value: string | null }[])
+      .map((r) => [r.setting_key, r.setting_value]),
+  );
+  const rawTotal = settings.get('ai_credit_total');
+  const rawWarn = settings.get('ai_credit_warn_at');
+  const creditTotalUsd = rawTotal != null && rawTotal !== '' ? Number(rawTotal) : DEFAULT_CREDIT_TOTAL_USD;
+  const creditWarnAtUsd = rawWarn != null && rawWarn !== '' ? Number(rawWarn) : DEFAULT_CREDIT_WARN_AT_USD;
+  const creditRemainingUsd = Math.max(0, creditTotalUsd - creditSpentAllTimeUsd);
+  const creditLow = creditExhaustedAt !== null || creditRemainingUsd <= creditWarnAtUsd;
+
   let level: AiStatus['level'] = 'ok';
-  if (creditExhaustedAt) level = 'exhausted';
+  if (creditExhaustedAt || creditRemainingUsd <= 0) level = 'exhausted';
   else if (percentUsed != null && percentUsed >= 100) level = 'over';
-  else if (percentUsed != null && percentUsed >= 80) level = 'warning';
+  else if (creditLow || (percentUsed != null && percentUsed >= 80)) level = 'warning';
 
   return {
     monthKey, inputTokens, outputTokens, estCostUsd,
@@ -103,6 +135,7 @@ export async function getAiStatus(userId: number): Promise<AiStatus> {
     creditExhausted: creditExhaustedAt !== null,
     creditExhaustedAt: creditExhaustedAt ? creditExhaustedAt.toISOString() : null,
     level,
+    creditTotalUsd, creditSpentAllTimeUsd, creditRemainingUsd, creditWarnAtUsd, creditLow,
   };
 }
 

@@ -156,7 +156,10 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
+import { useRoute } from 'vue-router';
 import { api, type Transaction, type Category, type TransactionMonth } from 'src/services/api';
+
+const route = useRoute();
 
 const PAGE_SIZE = 50;
 
@@ -306,6 +309,10 @@ async function saveEdit() {
 }
 
 onMounted(async () => {
+  // Honour a ?category=Name deep link (e.g. from the dashboard anomaly alerts).
+  if (typeof route.query.category === 'string' && route.query.category) {
+    filterCategory.value = route.query.category;
+  }
   try {
     const [, cats, mos] = await Promise.all([loadTransactions(), api.getCategories(), api.getTransactionMonths()]);
     categories.value = cats;

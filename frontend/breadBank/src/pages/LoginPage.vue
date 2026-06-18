@@ -276,6 +276,9 @@ async function handleLogin() {
     await auth.login(email.value, password.value);
     // Tell the dashboard to pull fresh bank data once, on this login.
     sessionStorage.setItem('bb_sync_on_login', '1');
+    // Privacy: start every session with amounts hidden. The user can reveal
+    // them with the dashboard's eye toggle; next login hides them again.
+    localStorage.setItem('bb_hide_amounts', '1');
     await router.push('/app/dashboard');
   } catch (err) {
     errorMessage.value = err instanceof Error ? err.message : 'Login failed. Please try again.';

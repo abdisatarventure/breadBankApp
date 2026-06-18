@@ -48,6 +48,34 @@ export interface DashboardData {
   parkingSpend: number;
   parkingTxCount: number;
   parkingSpendYtd: number;
+  anomalies: SpendingAnomaly[];
+}
+
+export interface SpendingAnomaly {
+  category: string;
+  color: string | null;
+  icon: string | null;
+  thisWeek: number;
+  avgWeek: number;
+  ratio: number;
+}
+
+export interface Bill {
+  id: string;
+  source: 'subscription' | 'liability';
+  name: string;
+  amount: number;
+  dueDate: string; // 'YYYY-MM-DD'
+  status: 'paid' | 'upcoming';
+  cadence?: string;
+  category?: string | null;
+  categoryColor?: string | null;
+  accountName?: string | null;
+}
+
+export interface CalendarData {
+  bills: Bill[];
+  summary: { count: number; totalUpcoming: number; dueThisWeek: number; dueThisWeekCount: number };
 }
 
 export interface ReportMerchant {
@@ -258,6 +286,11 @@ export interface AiStatus {
   creditExhausted: boolean;
   creditExhaustedAt: string | null;
   level: 'ok' | 'warning' | 'over' | 'exhausted';
+  creditTotalUsd: number;
+  creditSpentAllTimeUsd: number;
+  creditRemainingUsd: number;
+  creditWarnAtUsd: number;
+  creditLow: boolean;
 }
 
 // ── Savings goals ──────────────────────────────────────────
@@ -367,6 +400,15 @@ export const api = {
   // Subscriptions
   getSubscriptions: () => request<SubscriptionsData>('/subscriptions'),
 
+  // Bill calendar
+  getCalendar: (from?: string, to?: string) => {
+    const params = new URLSearchParams();
+    if (from) params.set('from', from);
+    if (to) params.set('to', to);
+    const q = params.toString();
+    return request<CalendarData>(`/calendar${q ? '?' + q : ''}`);
+  },
+
   // Reports
   getReports: () => request<ReportsData>('/reports'),
   getMonthlyBreakdown: (year?: number) =>
@@ -425,4 +467,6 @@ export const api = {
   getAiStatus: () => request<AiStatus>('/ai/status'),
   setAiBudget: (budget: number | null) =>
     request<AiStatus>('/ai/budget', { method: 'PUT', body: JSON.stringify({ budget }) }),
+  setAiCreditTotal: (total: number) =>
+    request<AiStatus>('/ai/credit', { method: 'PUT', body: JSON.stringify({ total }) }),
 };

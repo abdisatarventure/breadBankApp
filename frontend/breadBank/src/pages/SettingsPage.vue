@@ -45,6 +45,41 @@
           <div class="bb-set-metric-val" :style="`color:${statusColor}`">{{ statusLabel }}</div>
           <div class="bb-set-metric-sub">{{ ai.creditExhausted ? 'last call failed' : 'API reachable' }}</div>
         </div>
+        <div class="bb-set-metric">
+          <div class="bb-set-metric-lbl">Credits remaining (est.)</div>
+          <div class="bb-set-metric-val" :style="`color:${ai.creditLow ? '#EF4444' : '#22C55E'}`">
+            {{ fmtUsd(ai.creditRemainingUsd) }}
+          </div>
+          <div class="bb-set-metric-sub">of {{ fmtUsd(ai.creditTotalUsd) }} · {{ fmtUsd(ai.creditSpentAllTimeUsd) }} used all-time</div>
+        </div>
+      </div>
+
+      <!-- Credit balance control -->
+      <div v-if="ai" class="bb-set-budget">
+        <div class="bb-set-metric-lbl q-mb-xs">Total Claude credits purchased (warn at {{ fmtUsd(ai.creditWarnAtUsd) }})</div>
+        <div class="row items-center q-gutter-sm">
+          <q-input
+            v-model.number="creditTotalInput"
+            type="number" dense outlined dark
+            placeholder="e.g. 5"
+            prefix="$"
+            style="max-width:160px"
+            @keyup.enter="saveCreditTotal"
+          />
+          <q-btn no-caps unelevated label="Save" :loading="savingCredit"
+            style="background:linear-gradient(135deg,#6C4ED4,#E040FB);color:#fff;border-radius:8px"
+            @click="saveCreditTotal" />
+          <a href="https://console.anthropic.com/settings/billing" target="_blank" rel="noopener" class="bb-set-link">Add credits →</a>
+        </div>
+        <div class="bb-set-bar-wrap">
+          <div class="bb-set-bar" :style="{
+            width: Math.min(100, (ai.creditRemainingUsd / Math.max(ai.creditTotalUsd, 0.01)) * 100) + '%',
+            background: ai.creditLow ? '#EF4444' : 'linear-gradient(90deg,#6C4ED4,#22C55E)',
+          }" />
+        </div>
+        <div class="bb-set-note">
+          Anthropic has no balance API, so this is estimated from token usage. After you top up, bump this total to match what you bought.
+        </div>
       </div>
 
       <!-- Budget control -->
@@ -216,6 +251,8 @@ const ai           = ref<AiStatus | null>(null);
 const aiLoading    = ref(true);
 const budgetInput  = ref<number | null>(null);
 const savingBudget = ref(false);
+const creditTotalInput = ref<number | null>(null);
+const savingCredit = ref(false);
 
 const banks   = ref<PlaidLinkStatus['linked']>([]);
 const syncing = ref(false);
@@ -246,10 +283,24 @@ async function loadAi() {
   try {
     ai.value = await api.getAiStatus();
     budgetInput.value = ai.value.monthlyBudgetUsd;
+    creditTotalInput.value = ai.value.creditTotalUsd;
   } catch (e) {
     console.error(e);
   } finally {
     aiLoading.value = false;
+  }
+}
+
+async function saveCreditTotal() {
+  if (creditTotalInput.value == null || creditTotalInput.value < 0) return;
+  savingCredit.value = true;
+  try {
+    ai.value = await api.setAiCreditTotal(creditTotalInput.value);
+    creditTotalInput.value = ai.value.creditTotalUsd;
+  } catch (e) {
+    console.error(e);
+  } finally {
+    savingCredit.value = false;
   }
 }
 

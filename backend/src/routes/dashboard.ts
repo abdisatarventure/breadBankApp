@@ -17,7 +17,7 @@ router.get('/', async (req: AuthRequest, res: Response) => {
 
     const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
-    const [currentMo, lastMo, categories, trend, topMerchants, parking, allocated] = await Promise.all([
+    const [currentMo, lastMo, categories, trend, topMerchants, parking, allocated, anomalyRows] = await Promise.all([
       pool.request()
         .input('userId', sql.Int, userId)
         .input('start', sql.Date, startOfMonth)
@@ -99,6 +99,21 @@ router.get('/', async (req: AuthRequest, res: Response) => {
           SELECT ISNULL(SUM(amount), 0) AS allocated
           FROM savings_contributions WHERE user_id = @userId AND month_key = @mk
         `),
+
+      // Anomaly detection: last-7-day spend per category vs the prior 12 weeks'
+      // weekly average, to flag categories spiking this week.
+      pool.request()
+        .input('userId', sql.Int, userId)
+        .query(`
+          SELECT c.name AS category, c.color, c.icon,
+            SUM(CASE WHEN t.date >= DATEADD(DAY,-7,CAST(GETDATE() AS DATE)) THEN ${NET_SPEND} ELSE 0 END) AS recent,
+            SUM(CASE WHEN t.date <  DATEADD(DAY,-7,CAST(GETDATE() AS DATE)) THEN ${NET_SPEND} ELSE 0 END) AS base84
+          FROM transactions t JOIN categories c ON t.category_id = c.id
+          WHERE t.user_id = @userId
+            AND t.date >= DATEADD(DAY,-91,CAST(GETDATE() AS DATE))
+            AND ${SPENDING_FILTER}
+          GROUP BY c.name, c.color, c.icon
+        `),
     ]);
 
     const s = currentMo.recordset[0] as { totalSpending: number; totalIncome: number } | undefined;
@@ -109,6 +124,23 @@ router.get('/', async (req: AuthRequest, res: Response) => {
     const prevSpend   = (lastMo.recordset[0] as { totalSpending: number } | undefined)?.totalSpending ?? 0;
     const park        = parking.recordset[0] as { monthTotal: number; monthTxCount: number; yearTotal: number } | undefined;
     const allocatedToGoals = Number((allocated.recordset[0] as { allocated: number } | undefined)?.allocated ?? 0);
+
+    // Flag categories where this week's spend is well above the prior 12-week
+    // weekly average (and meaningful in dollars), so the dashboard can warn.
+    type AnomalyRow = { category: string; color: string | null; icon: string | null; recent: number; base84: number };
+    const anomalies = (anomalyRows.recordset as AnomalyRow[])
+      .map((r) => {
+        const recent = Number(r.recent);
+        const avgWeek = Number(r.base84) / 12; // 84 days ≈ 12 weeks
+        return { category: r.category, color: r.color, icon: r.icon, thisWeek: recent, avgWeek,
+                 ratio: avgWeek > 0 ? recent / avgWeek : 0 };
+      })
+      // Needs real history, a spike of ≥2.5×, and at least $40 so tiny categories don't nag.
+      .filter((a) => a.avgWeek > 0 && a.thisWeek >= 40 && a.ratio >= 2.5)
+      .sort((a, b) => b.ratio - a.ratio)
+      .slice(0, 3)
+      .map((a) => ({ ...a, thisWeek: Math.round(a.thisWeek * 100) / 100, avgWeek: Math.round(a.avgWeek * 100) / 100,
+                     ratio: Math.round(a.ratio * 10) / 10 }));
 
     res.json({
       totalSpending:          spending,
@@ -126,6 +158,7 @@ router.get('/', async (req: AuthRequest, res: Response) => {
       parkingSpend:           park?.monthTotal ?? 0,
       parkingTxCount:         park?.monthTxCount ?? 0,
       parkingSpendYtd:        park?.yearTotal ?? 0,
+      anomalies,
     });
   } catch (err) {
     console.error(err);

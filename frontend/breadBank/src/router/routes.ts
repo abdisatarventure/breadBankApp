@@ -24,6 +24,7 @@ const routes: RouteRecordRaw[] = [
       { path: 'budgets', component: () => import('pages/BudgetsPage.vue') },
       { path: 'goals', component: () => import('pages/SavingsGoalsPage.vue') },
       { path: 'subscriptions', component: () => import('pages/SubscriptionsPage.vue') },
+      { path: 'bills', component: () => import('pages/BillsPage.vue') },
       { path: 'investments', component: () => import('pages/InvestmentsPage.vue') },
       { path: 'reports', component: () => import('pages/ReportsPage.vue') },
       { path: 'ai-chat', component: () => import('pages/AiChatPage.vue') },

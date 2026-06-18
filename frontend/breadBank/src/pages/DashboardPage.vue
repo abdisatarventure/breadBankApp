@@ -49,6 +49,29 @@
 
     <template v-else-if="!loadError">
 
+      <!-- Unusual-spending alerts -->
+      <div v-if="visibleAnomalies.length > 0" class="bb-anomalies q-mb-lg">
+        <div v-for="a in visibleAnomalies" :key="a.category" class="bb-anomaly">
+          <div class="bb-anomaly-icon" :style="{ background: (a.color || '#F59E0B') + '22' }">
+            <q-icon :name="a.icon || 'trending_up'" size="16px" :style="`color:${a.color || '#F59E0B'}`" />
+          </div>
+          <div class="bb-anomaly-text">
+            <strong>{{ a.category }}</strong> spending is
+            <strong>{{ a.ratio }}×</strong> your usual this week
+            <span class="bb-anomaly-sub">{{ money(a.thisWeek) }} vs {{ money(a.avgWeek) }} typical</span>
+          </div>
+          <router-link
+            :to="`/app/transactions?category=${encodeURIComponent(a.category)}`"
+            class="bb-anomaly-link"
+            @click="dismissAnomaly(a.category)"
+          >Review →</router-link>
+          <q-btn flat round dense size="sm" icon="close" class="bb-anomaly-close"
+            @click="dismissAnomaly(a.category)">
+            <q-tooltip>Dismiss</q-tooltip>
+          </q-btn>
+        </div>
+      </div>
+
       <!-- AI Summary + Suggestions -->
       <div class="row q-col-gutter-md q-mb-lg">
 
@@ -158,15 +181,21 @@
         <div class="col-6 col-md-3">
           <div class="bb-stat">
             <div class="bb-stat-lbl">
-              <span class="bb-dot" style="background:#22C55E"></span>
+              <span class="bb-dot" :style="`background:${netSavingsNegative ? '#EF4444' : '#22C55E'}`"></span>
               NET SAVINGS
             </div>
-            <div class="bb-stat-val">{{ money(dash?.netSavings ?? 0) }}</div>
+            <div class="bb-stat-val" :style="netSavingsNegative ? 'color:#EF4444' : ''">{{ money(dash?.netSavings ?? 0) }}</div>
             <div class="bb-stat-row">
-              <span class="bb-savings-rate">{{ (dash?.savingsRate ?? 0).toFixed(0) }}% rate</span>
+              <span class="bb-savings-rate" :class="{ 'is-negative': netSavingsNegative }">
+                {{ (dash?.savingsRate ?? 0).toFixed(0) }}% rate{{ netSavingsNegative ? ' · over budget' : '' }}
+              </span>
             </div>
             <div class="bb-savings-bar-wrap">
-              <div class="bb-savings-bar" :style="{ width: Math.min(dash?.savingsRate ?? 0, 100) + '%' }" />
+              <div
+                class="bb-savings-bar"
+                :class="{ 'is-negative': netSavingsNegative }"
+                :style="{ width: Math.min(Math.abs(dash?.savingsRate ?? 0), 100) + '%' }"
+              />
             </div>
             <router-link to="/app/goals" class="bb-unallocated">
               {{ money(dash?.unallocatedSavings ?? 0) }} unallocated →
@@ -316,6 +345,24 @@ const aiSuggestions = ref<string[]>([]);
 // in a new month. Don't let that hide the whole charts area — only show the
 // "no transactions" prompt when there's genuinely no data anywhere.
 const hasCategoryData = computed(() => (dash.value?.categoryBreakdown.length ?? 0) > 0);
+// Spent more than earned this month → show Net Savings in the red.
+const netSavingsNegative = computed(() => (dash.value?.netSavings ?? 0) < 0);
+
+// Anomaly alerts you've reviewed/dismissed stay gone for the current week
+// (keyed by category + week bucket), then can re-alert if they spike again.
+const dismissedAnomalies = ref<Record<string, boolean>>(
+  JSON.parse(localStorage.getItem('bb_dismissed_anomalies') || '{}'),
+);
+function anomalyKey(category: string) {
+  return `${category}|${Math.floor(Date.now() / (7 * 86_400_000))}`;
+}
+const visibleAnomalies = computed(() =>
+  (dash.value?.anomalies ?? []).filter((a) => !dismissedAnomalies.value[anomalyKey(a.category)]),
+);
+function dismissAnomaly(category: string) {
+  dismissedAnomalies.value = { ...dismissedAnomalies.value, [anomalyKey(category)]: true };
+  localStorage.setItem('bb_dismissed_anomalies', JSON.stringify(dismissedAnomalies.value));
+}
 const hasAnyData = computed(() =>
   hasCategoryData.value || (dash.value?.monthlyTrend?.length ?? 0) > 0,
 );
@@ -561,6 +608,23 @@ const categoryOpts = computed<ApexOptions>(() => ({
 <style lang="scss">
 .bb-dash { background-color: #0A0A1B; min-height: 100vh; }
 
+/* Unusual-spending alerts */
+.bb-anomalies { display: flex; flex-direction: column; gap: 10px; }
+.bb-anomaly {
+  display: flex; align-items: center; gap: 12px;
+  background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.28);
+  border-radius: 12px; padding: 12px 16px;
+}
+.bb-anomaly-icon { width: 32px; height: 32px; border-radius: 9px; display: grid; place-items: center; flex-shrink: 0; }
+.bb-anomaly-text { flex: 1; min-width: 0; font-size: 13px; color: #E6E6F5; }
+.bb-anomaly-text strong { color: #ffffff; font-weight: 700; }
+.bb-anomaly-sub { display: block; font-size: 11px; color: #9090B8; margin-top: 2px; }
+.bb-anomaly-link {
+  font-size: 12px; font-weight: 600; color: #F59E0B; text-decoration: none; white-space: nowrap;
+  &:hover { color: #FBBF24; }
+}
+.bb-anomaly-close { color: #6E6E9A; flex-shrink: 0; &:hover { color: #F8FAFF; } }
+
 .bb-chart-empty {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   height: 280px; gap: 12px; color: #6E6E9A; font-size: 13px; text-align: center;
@@ -612,8 +676,10 @@ const categoryOpts = computed<ApexOptions>(() => ({
 .bb-badge-neutral { font-size: 10px; font-weight: 600; background: rgba(110,110,154,0.15); color: #6E6E9A; padding: 2px 7px; border-radius: 20px; }
 
 .bb-savings-rate { font-size: 11px; font-weight: 600; color: #22C55E; }
+.bb-savings-rate.is-negative { color: #EF4444; }
 .bb-savings-bar-wrap { height: 4px; background: rgba(255,255,255,0.06); border-radius: 2px; overflow: hidden; margin-top: 4px; }
 .bb-savings-bar { height: 100%; background: linear-gradient(90deg,#6C4ED4,#22C55E); border-radius: 2px; transition: width 0.6s ease; }
+.bb-savings-bar.is-negative { background: linear-gradient(90deg,#F97316,#EF4444); }
 .bb-unallocated {
   display: inline-block; margin-top: 8px; font-size: 11px; font-weight: 600;
   color: #8B6FEC; text-decoration: none;

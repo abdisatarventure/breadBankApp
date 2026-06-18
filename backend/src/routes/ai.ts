@@ -48,6 +48,33 @@ router.put('/budget', async (req: AuthRequest, res: Response) => {
   }
 });
 
+// PUT /api/ai/credit  { total: number } — set total Claude credits purchased
+// (used to estimate the remaining balance, since Anthropic has no balance API).
+router.put('/credit', async (req: AuthRequest, res: Response) => {
+  try {
+    const { total } = req.body as { total: unknown };
+    const value = Number(total);
+    if (!Number.isFinite(value) || value < 0) {
+      res.status(400).json({ error: 'total must be a non-negative number' });
+      return;
+    }
+    await getPool().request()
+      .input('u', sql.Int, req.userId)
+      .input('v', sql.NVarChar(50), String(value))
+      .query(`
+        MERGE app_settings AS t
+        USING (SELECT @u AS user_id, 'ai_credit_total' AS setting_key) AS s
+          ON t.user_id = s.user_id AND t.setting_key = s.setting_key
+        WHEN MATCHED THEN UPDATE SET setting_value = @v
+        WHEN NOT MATCHED THEN INSERT (user_id, setting_key, setting_value) VALUES (@u, 'ai_credit_total', @v);
+      `);
+    res.json(await getAiStatus(req.userId!));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to update credit total' });
+  }
+});
+
 // POST /api/ai/summary  { month: 1-12, year: 2026 }
 router.post('/summary', async (req: AuthRequest, res: Response) => {
   try {
