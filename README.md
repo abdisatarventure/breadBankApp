@@ -20,15 +20,17 @@ _Drop your own images into `docs/screenshots/` (e.g. `dashboard.png`) and they'l
 
 ## Features
 
-- **Dashboard** — balances, monthly income/spending, net worth, savings rate, per-account breakdowns, and 6-month trend + category charts. One-click "hide amounts" privacy toggle.
+- **Dashboard** — balances, monthly income/spending, net worth, savings rate, per-account breakdowns, and 6-month trend + category charts. "Hide amounts" privacy toggle (defaults on at login, masks charts too) and **unusual-spending alerts** that flag a category spiking well above its 12-week norm.
 - **Transactions** — searchable, filterable, editable (category, note, **date**). Manual date edits are locked against Plaid overwrites.
 - **AI categorization** — Claude auto-files transactions; it learns your corrections as merchant rules so future imports get smarter.
 - **Budgets** — monthly limits per category with progress bars. **Build a full budget with AI** from last month's spending (it protects essentials and trims discretionary categories to a target), tighten it gradually with a one-click "trim 5%", and still edit every line by hand. Plus "where to cut back" suggestions.
 - **AI Assistant** — ask natural-language questions about your finances ("how much did I spend on food last month?", "what are my top merchants?") and get answers grounded in your own data.
 - **Smart income vs. spending** — credits are only counted as income when filed under **Income**; a credit in a spending category is treated as a **refund/reimbursement** that offsets that category (great for splitting rent or bills with a roommate). **Transfer** is excluded from both.
 - **Plaid bank linking** — live sync of balances + transactions (Wells Fargo, Discover, Fidelity, etc.). Access tokens are encrypted at rest.
+- **Savings Goals** — fund buckets (a new car, a trip, an emergency fund) from each month's leftover. A built-in **"pay yourself first" reserve** sets aside 20% of net savings before any goal can be funded, and Claude can **suggest how to split** the rest across your goals by deadline and priority.
+- **Bills & due dates** — a calendar of what's hitting your account and when, built from detected subscriptions (projected by cadence) plus credit-card payment due dates from Plaid Liabilities.
 - **Investments** — holdings, value, and gains pulled from linked brokerages.
-- **Reports, Subscriptions, Categories**, and an AI-spend tracker with a configurable monthly budget warning.
+- **Reports, Subscriptions, Categories**, and an AI-spend tracker that estimates your remaining Claude credit and warns you (in Settings and a login popup) before it runs out.
 
 ## Tech stack
 

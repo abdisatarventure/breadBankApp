@@ -350,9 +350,14 @@ const netSavingsNegative = computed(() => (dash.value?.netSavings ?? 0) < 0);
 
 // Anomaly alerts you've reviewed/dismissed stay gone for the current week
 // (keyed by category + week bucket), then can re-alert if they spike again.
-const dismissedAnomalies = ref<Record<string, boolean>>(
-  JSON.parse(localStorage.getItem('bb_dismissed_anomalies') || '{}'),
-);
+function readDismissed(): Record<string, boolean> {
+  try {
+    return JSON.parse(localStorage.getItem('bb_dismissed_anomalies') || '{}') as Record<string, boolean>;
+  } catch {
+    return {}; // corrupt value — start clean rather than crashing the dashboard
+  }
+}
+const dismissedAnomalies = ref<Record<string, boolean>>(readDismissed());
 function anomalyKey(category: string) {
   return `${category}|${Math.floor(Date.now() / (7 * 86_400_000))}`;
 }
