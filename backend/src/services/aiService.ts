@@ -25,20 +25,22 @@ function currentMonthKey(): string {
   return new Date().toISOString().slice(0, 7); // 'YYYY-MM'
 }
 
-// Accumulate this month's token usage so Settings can estimate spend.
-async function recordUsage(inputTokens: number, outputTokens: number): Promise<void> {
+// Accumulate this month's token usage per user so Settings can estimate spend.
+async function recordUsage(userId: number, inputTokens: number, outputTokens: number): Promise<void> {
   try {
     await getPool().request()
+      .input('u', sql.Int, userId)
       .input('m', sql.NVarChar(7), currentMonthKey())
       .input('i', sql.BigInt, inputTokens)
       .input('o', sql.BigInt, outputTokens)
       .query(`
         MERGE ai_usage AS t
-        USING (SELECT @m AS month_key) AS s ON t.month_key = s.month_key
+        USING (SELECT @u AS user_id, @m AS month_key) AS s
+          ON t.user_id = s.user_id AND t.month_key = s.month_key
         WHEN MATCHED THEN UPDATE SET
           input_tokens = t.input_tokens + @i, output_tokens = t.output_tokens + @o, updated_at = SYSUTCDATETIME()
-        WHEN NOT MATCHED THEN INSERT (month_key, input_tokens, output_tokens, updated_at)
-          VALUES (@m, @i, @o, SYSUTCDATETIME());
+        WHEN NOT MATCHED THEN INSERT (user_id, month_key, input_tokens, output_tokens, updated_at)
+          VALUES (@u, @m, @i, @o, SYSUTCDATETIME());
       `);
   } catch (e) {
     // Usage tracking must never break an AI feature.
@@ -46,13 +48,13 @@ async function recordUsage(inputTokens: number, outputTokens: number): Promise<v
   }
 }
 
-// Single choke point for every Claude call: records usage on success and flags
-// credit exhaustion on failure.
-async function callClaude(params: Anthropic.MessageCreateParamsNonStreaming): Promise<Anthropic.Message> {
+// Single choke point for every Claude call: records usage (for the calling user)
+// on success and flags credit exhaustion on failure.
+async function callClaude(params: Anthropic.MessageCreateParamsNonStreaming, userId: number): Promise<Anthropic.Message> {
   try {
     const resp = await anthropic.messages.create(params);
     creditExhaustedAt = null;
-    await recordUsage(resp.usage.input_tokens, resp.usage.output_tokens);
+    await recordUsage(userId, resp.usage.input_tokens, resp.usage.output_tokens);
     return resp;
   } catch (err) {
     if (isCreditError(err)) creditExhaustedAt = new Date();
@@ -70,30 +72,62 @@ export interface AiStatus {
   creditExhausted: boolean;
   creditExhaustedAt: string | null;
   level: 'ok' | 'warning' | 'over' | 'exhausted';
+  // Anthropic has no balance API, so we estimate: a user-set total of purchased
+  // credits (default $5) minus all-time estimated spend = remaining.
+  creditTotalUsd: number;
+  creditSpentAllTimeUsd: number;
+  creditRemainingUsd: number;
+  creditWarnAtUsd: number;
+  creditLow: boolean; // remaining <= warn threshold (or already exhausted)
 }
 
-export async function getAiStatus(): Promise<AiStatus> {
+// Defaults when the user hasn't customised them in settings.
+const DEFAULT_CREDIT_TOTAL_USD = 5;
+const DEFAULT_CREDIT_WARN_AT_USD = 1;
+
+export async function getAiStatus(userId: number): Promise<AiStatus> {
   const monthKey = currentMonthKey();
   const pool = getPool();
 
-  const usage = await pool.request().input('m', sql.NVarChar(7), monthKey)
-    .query(`SELECT input_tokens, output_tokens FROM ai_usage WHERE month_key = @m`);
+  const usage = await pool.request().input('u', sql.Int, userId).input('m', sql.NVarChar(7), monthKey)
+    .query(`SELECT input_tokens, output_tokens FROM ai_usage WHERE user_id = @u AND month_key = @m`);
   const inputTokens  = Number((usage.recordset[0] as { input_tokens?: number } | undefined)?.input_tokens  ?? 0);
   const outputTokens = Number((usage.recordset[0] as { output_tokens?: number } | undefined)?.output_tokens ?? 0);
   const estCostUsd = inputTokens * PRICE_PER_INPUT_TOKEN + outputTokens * PRICE_PER_OUTPUT_TOKEN;
 
-  const budgetRow = await pool.request()
-    .query(`SELECT setting_value FROM app_settings WHERE setting_key = 'ai_monthly_budget'`);
+  const budgetRow = await pool.request().input('u', sql.Int, userId)
+    .query(`SELECT setting_value FROM app_settings WHERE user_id = @u AND setting_key = 'ai_monthly_budget'`);
   const rawBudget = (budgetRow.recordset[0] as { setting_value?: string } | undefined)?.setting_value;
   const monthlyBudgetUsd = rawBudget != null && rawBudget !== '' ? Number(rawBudget) : null;
 
   const percentUsed = monthlyBudgetUsd && monthlyBudgetUsd > 0
     ? (estCostUsd / monthlyBudgetUsd) * 100 : null;
 
+  // All-time estimated spend across every month, for the credit balance.
+  const allTime = await pool.request().input('u', sql.Int, userId)
+    .query(`SELECT ISNULL(SUM(input_tokens),0) AS i, ISNULL(SUM(output_tokens),0) AS o
+            FROM ai_usage WHERE user_id = @u`);
+  const allRow = allTime.recordset[0] as { i: number; o: number };
+  const creditSpentAllTimeUsd = Number(allRow.i) * PRICE_PER_INPUT_TOKEN + Number(allRow.o) * PRICE_PER_OUTPUT_TOKEN;
+
+  const settingsRows = await pool.request().input('u', sql.Int, userId)
+    .query(`SELECT setting_key, setting_value FROM app_settings
+            WHERE user_id = @u AND setting_key IN ('ai_credit_total', 'ai_credit_warn_at')`);
+  const settings = new Map(
+    (settingsRows.recordset as { setting_key: string; setting_value: string | null }[])
+      .map((r) => [r.setting_key, r.setting_value]),
+  );
+  const rawTotal = settings.get('ai_credit_total');
+  const rawWarn = settings.get('ai_credit_warn_at');
+  const creditTotalUsd = rawTotal != null && rawTotal !== '' ? Number(rawTotal) : DEFAULT_CREDIT_TOTAL_USD;
+  const creditWarnAtUsd = rawWarn != null && rawWarn !== '' ? Number(rawWarn) : DEFAULT_CREDIT_WARN_AT_USD;
+  const creditRemainingUsd = Math.max(0, creditTotalUsd - creditSpentAllTimeUsd);
+  const creditLow = creditExhaustedAt !== null || creditRemainingUsd <= creditWarnAtUsd;
+
   let level: AiStatus['level'] = 'ok';
-  if (creditExhaustedAt) level = 'exhausted';
+  if (creditExhaustedAt || creditRemainingUsd <= 0) level = 'exhausted';
   else if (percentUsed != null && percentUsed >= 100) level = 'over';
-  else if (percentUsed != null && percentUsed >= 80) level = 'warning';
+  else if (creditLow || (percentUsed != null && percentUsed >= 80)) level = 'warning';
 
   return {
     monthKey, inputTokens, outputTokens, estCostUsd,
@@ -101,6 +135,7 @@ export async function getAiStatus(): Promise<AiStatus> {
     creditExhausted: creditExhaustedAt !== null,
     creditExhaustedAt: creditExhaustedAt ? creditExhaustedAt.toISOString() : null,
     level,
+    creditTotalUsd, creditSpentAllTimeUsd, creditRemainingUsd, creditWarnAtUsd, creditLow,
   };
 }
 
@@ -116,7 +151,7 @@ const CATEGORIES = [
 interface TxInput { description: string; amount: number; }
 interface CatResult { index: number; category: string; merchant: string; }
 
-export async function categorizeTransactions(txs: TxInput[], accountType?: string): Promise<CatResult[]> {
+export async function categorizeTransactions(userId: number, txs: TxInput[], accountType?: string): Promise<CatResult[]> {
   if (txs.length === 0) return [];
 
   const accountNote = accountType === 'credit'
@@ -148,7 +183,7 @@ ${txs.map((t, i) => `${i}. "${t.description}" $${Math.abs(t.amount).toFixed(2)}`
     model: 'claude-opus-4-8',
     max_tokens: 2048,
     messages: [{ role: 'user', content: prompt }],
-  });
+  }, userId);
 
   const text = response.content[0]?.type === 'text' ? response.content[0].text.trim() : '[]';
 
@@ -175,7 +210,7 @@ export interface SummaryData {
   savingsRate: number;
 }
 
-export async function generateMonthlySummary(data: SummaryData): Promise<string> {
+export async function generateMonthlySummary(userId: number, data: SummaryData): Promise<string> {
   const change = data.previousMonthSpending > 0
     ? ((data.totalSpending - data.previousMonthSpending) / data.previousMonthSpending * 100).toFixed(0)
     : null;
@@ -194,7 +229,7 @@ Data:
     model: 'claude-opus-4-8',
     max_tokens: 300,
     messages: [{ role: 'user', content: prompt }],
-  });
+  }, userId);
 
   return response.content[0]?.type === 'text' ? response.content[0].text : '';
 }
@@ -206,7 +241,7 @@ export interface SuggestionsData extends SummaryData {
   unusedSubscriptions: string[];
 }
 
-export async function generateSuggestions(data: SuggestionsData): Promise<string[]> {
+export async function generateSuggestions(userId: number, data: SuggestionsData): Promise<string[]> {
   const prompt = `Based on this ${data.month} spending, give exactly 3 specific actionable suggestions for next month. Each is one sentence. Start with a concrete number or percentage. No generic advice.
 
 Top categories: ${data.categoryBreakdown.slice(0, 5).map(c => `${c.category} $${c.amount.toFixed(0)}`).join(', ')}
@@ -220,7 +255,7 @@ Return ONLY a JSON array of 3 strings:
     model: 'claude-opus-4-8',
     max_tokens: 400,
     messages: [{ role: 'user', content: prompt }],
-  });
+  }, userId);
 
   const text = response.content[0]?.type === 'text' ? response.content[0].text.trim() : '[]';
 
@@ -269,6 +304,7 @@ function fallbackBudgetPlan(cats: BudgetPlanCategory[], reductionPercent: number
 }
 
 export async function generateBudgetPlan(
+  userId: number,
   cats: BudgetPlanCategory[],
   reductionPercent: number,
 ): Promise<BudgetPlanItem[]> {
@@ -294,7 +330,7 @@ Return ONLY a JSON array (no markdown, no explanation), one object per category 
       model: 'claude-opus-4-8',
       max_tokens: 1024,
       messages: [{ role: 'user', content: prompt }],
-    });
+    }, userId);
 
     const text = response.content[0]?.type === 'text' ? response.content[0].text.trim() : '[]';
     const parsed = JSON.parse(text) as BudgetPlanItem[];
@@ -319,9 +355,116 @@ Return ONLY a JSON array (no markdown, no explanation), one object per category 
   }
 }
 
+// ── Savings split suggestion ───────────────────────────────────────
+// Given this month's leftover ("available") and each goal's remaining need,
+// deadline and priority, propose how much to drop into each bucket. Mirrors
+// generateBudgetPlan: AI first, deterministic fallback when AI is unavailable.
+
+export interface SavingsSplitGoal {
+  goalId: number;
+  name: string;
+  remaining: number;            // target - already saved (>= 0)
+  targetDate: string | null;    // 'YYYY-MM-DD' or null
+  priority: number;             // higher = fund first
+}
+export interface SavingsSplitItem {
+  goalId: number;
+  suggestedAmount: number;
+  note: string;
+}
+
+function roundTo10(n: number): number {
+  return Math.max(0, Math.round(n / 10) * 10);
+}
+
+// Distribute `available` across goals by urgency: soonest deadline first, then
+// higher priority, each capped at its remaining need. Used when AI is down.
+function fallbackSavingsSplit(goals: SavingsSplitGoal[], available: number): SavingsSplitItem[] {
+  const order = [...goals].sort((a, b) => {
+    const ad = a.targetDate ? Date.parse(a.targetDate) : Infinity;
+    const bd = b.targetDate ? Date.parse(b.targetDate) : Infinity;
+    if (ad !== bd) return ad - bd;            // earlier deadline first
+    return b.priority - a.priority;            // then higher priority
+  });
+  let pot = Math.max(0, available);
+  const byId = new Map<number, SavingsSplitItem>();
+  for (const g of order) {
+    const give = Math.min(Math.max(0, g.remaining), pot);
+    pot -= give;
+    byId.set(g.goalId, {
+      goalId: g.goalId,
+      suggestedAmount: Math.round(give * 100) / 100,
+      note: g.targetDate ? 'Fund toward deadline' : 'Toward goal',
+    });
+  }
+  // Preserve the caller's order in the response.
+  return goals.map((g) => byId.get(g.goalId) ?? { goalId: g.goalId, suggestedAmount: 0, note: '' });
+}
+
+export async function generateSavingsSplit(
+  userId: number,
+  goals: SavingsSplitGoal[],
+  available: number,
+): Promise<SavingsSplitItem[]> {
+  const pot = Math.max(0, available);
+  const fundable = goals.filter((g) => g.remaining > 0);
+  if (fundable.length === 0 || pot <= 0) {
+    return goals.map((g) => ({ goalId: g.goalId, suggestedAmount: 0, note: '' }));
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+  const prompt = `You are a personal savings assistant. The user has $${pot.toFixed(2)} of leftover money this month to put toward their savings goals. Today is ${today}. Propose how much to put into each goal.
+
+Guidelines:
+- The total you allocate MUST NOT exceed $${pot.toFixed(2)}. It can be less if that's sensible.
+- Never allocate more than a goal's remaining need.
+- Prioritize goals with the soonest deadline, then higher priority.
+- It's fine to fully fund small/urgent goals and leave longer-term ones partially funded.
+- Round every amount to the nearest $10.
+
+Goals (remaining need | deadline | priority):
+${fundable.map((g) => `- id ${g.goalId} | ${g.name} | $${g.remaining.toFixed(2)} | ${g.targetDate ?? 'no deadline'} | priority ${g.priority}`).join('\n')}
+
+Return ONLY a JSON array (no markdown, no explanation), one object per goal id above:
+[{"goalId":1,"suggestedAmount":120,"note":"short reason (<=6 words)"}]`;
+
+  try {
+    const response = await callClaude({
+      model: 'claude-opus-4-8',
+      max_tokens: 1024,
+      messages: [{ role: 'user', content: prompt }],
+    }, userId);
+
+    const text = response.content[0]?.type === 'text' ? response.content[0].text.trim() : '[]';
+    const parsed = JSON.parse(text) as SavingsSplitItem[];
+    const byId = new Map(parsed.map((p) => [Number(p.goalId), p]));
+
+    // Trust our goal set, not the model: clamp each amount to [0, remaining], drop
+    // unknown ids, then scale down proportionally if the total still exceeds the pot.
+    let items = fundable.map((g) => {
+      const ai = byId.get(g.goalId);
+      const raw = ai ? Number(ai.suggestedAmount) : 0;
+      const capped = Math.min(Math.max(Number.isFinite(raw) ? raw : 0, 0), g.remaining);
+      return { goalId: g.goalId, suggestedAmount: roundTo10(capped), note: ai?.note ?? 'Toward goal' };
+    });
+
+    const total = items.reduce((a, i) => a + i.suggestedAmount, 0);
+    if (total > pot && total > 0) {
+      const scale = pot / total;
+      items = items.map((i) => ({ ...i, suggestedAmount: roundTo10(i.suggestedAmount * scale) }));
+    }
+
+    const byIdOut = new Map(items.map((i) => [i.goalId, i]));
+    return goals.map((g) => byIdOut.get(g.goalId) ?? { goalId: g.goalId, suggestedAmount: 0, note: '' });
+  } catch {
+    // Out of credit or malformed response — deterministic split so it still works.
+    return fallbackSavingsSplit(goals, pot);
+  }
+}
+
 // ── Natural language Q&A ───────────────────────────────────────────
 
-export async function answerFinanceQuestion(question: string, context: string): Promise<string> {
+export async function answerFinanceQuestion(userId: number, question: string, context: string): Promise<string> {
   const response = await callClaude({
     model: 'claude-opus-4-8',
     max_tokens: 500,
@@ -334,7 +477,7 @@ ${context}
 
 Question: ${question}`,
     }],
-  });
+  }, userId);
 
   return response.content[0]?.type === 'text' ? response.content[0].text : 'Unable to answer at this time.';
 }

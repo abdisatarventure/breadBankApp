@@ -7,17 +7,9 @@ USE breadbank;
 GO
 
 -- ── Default Accounts ──────────────────────────────────────
-IF NOT EXISTS (SELECT 1 FROM accounts)
-BEGIN
-    INSERT INTO accounts (name, type, institution) VALUES
-    ('Checking',      'checking',   'Wells Fargo'),
-    ('Savings',       'savings',    'Wells Fargo'),
-    ('Apple Card',    'credit',     'Apple'),
-    ('Discover Card', 'credit',     'Discover'),
-    ('Robinhood',     'investment', 'Robinhood'),
-    ('Fidelity',      'investment', 'Fidelity');
-    PRINT 'Accounts seeded.';
-END
+-- Accounts are now created PER USER when someone registers (see backend
+-- routes/auth.ts seedDefaultAccounts), so each person gets their own set and
+-- balances never bleed across users. Nothing to seed globally here.
 
 -- ── Default Categories ────────────────────────────────────
 IF NOT EXISTS (SELECT 1 FROM categories)

@@ -144,6 +144,55 @@
             </div>
           </div>
         </div>
+
+        <!-- Monthly breakdown: every month of a chosen year, side by side -->
+        <div class="row q-mt-lg">
+          <div class="col-12">
+            <div class="bb-report-card">
+              <div class="bb-report-card__header">
+                <div>
+                  <div class="bb-report-card__title">Monthly Breakdown</div>
+                  <div class="bb-report-card__sub">Spending, income &amp; net for every month of {{ selectedYear ?? '—' }}</div>
+                </div>
+                <q-select
+                  v-if="availableYears.length"
+                  :model-value="selectedYear"
+                  :options="availableYears"
+                  dense outlined dark options-dark
+                  class="bb-year-select"
+                  @update:model-value="onYearChange"
+                />
+              </div>
+
+              <div v-if="monthlyLoading" class="bb-loading"><q-spinner color="primary" size="24px" /> <span>Loading…</span></div>
+
+              <template v-else-if="hasMonthlyData">
+                <VueApexCharts type="bar" height="300" :options="monthlyChartOptions" :series="monthlyChartSeries" />
+
+                <div class="bb-month-table">
+                  <div class="bb-month-row bb-month-row--head">
+                    <span>Month</span>
+                    <span class="bb-month-num">Spending</span>
+                    <span class="bb-month-num">Income</span>
+                    <span class="bb-month-num">Net</span>
+                    <span class="bb-month-num">vs prev</span>
+                  </div>
+                  <div v-for="row in monthlyRows" :key="row.monthKey" class="bb-month-row">
+                    <span>{{ row.label }}</span>
+                    <span class="bb-month-num">{{ fmt(row.spending) }}</span>
+                    <span class="bb-month-num bb-amt-income">{{ fmt(row.income) }}</span>
+                    <span class="bb-month-num" :class="row.net >= 0 ? 'bb-amt-income' : 'bb-amt-neg'">{{ fmt(row.net) }}</span>
+                    <span class="bb-month-num" :class="row.delta == null ? 'bb-month-muted' : row.delta > 0 ? 'bb-amt-neg' : 'bb-amt-income'">
+                      {{ row.delta == null ? '—' : `${row.delta > 0 ? '+' : ''}${row.delta.toFixed(0)}%` }}
+                    </span>
+                  </div>
+                </div>
+              </template>
+
+              <div v-else class="bb-month-empty">No transactions in {{ selectedYear ?? 'this year' }}.</div>
+            </div>
+          </div>
+        </div>
       </template>
     </template>
   </q-page>
@@ -153,11 +202,16 @@
 import { ref, computed, onMounted } from 'vue';
 import type { ApexOptions } from 'apexcharts';
 import VueApexCharts from 'vue3-apexcharts';
-import { api, type ReportsData } from 'src/services/api';
+import { api, type ReportsData, type MonthlyBreakdown } from 'src/services/api';
 
 const loading = ref(true);
 const loadError = ref('');
 const reports = ref<ReportsData | null>(null);
+
+// ── Monthly breakdown (per-month compare for a selectable year) ──────
+const monthly = ref<MonthlyBreakdown | null>(null);
+const selectedYear = ref<number | null>(null);
+const monthlyLoading = ref(false);
 
 const hasData = computed(() => !!reports.value && reports.value.topMerchants.length > 0);
 const topMerchants = computed(() => reports.value?.topMerchants ?? []);
@@ -253,6 +307,59 @@ function fmt(value: number) {
   return '$' + value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+// ── Monthly breakdown ────────────────────────────────────────────────
+const monthlyMonths = computed(() => monthly.value?.months ?? []);
+const availableYears = computed(() => monthly.value?.availableYears ?? []);
+
+// Each month plus its change in spending vs the previous month, for the table.
+const monthlyRows = computed(() =>
+  monthlyMonths.value.map((m, i) => {
+    const prev = i > 0 ? monthlyMonths.value[i - 1]!.spending : null;
+    const delta = prev !== null && prev > 0 ? ((m.spending - prev) / prev) * 100 : null;
+    return { ...m, delta };
+  }),
+);
+
+const monthlyChartSeries = computed(() => [
+  { name: 'Spending', data: monthlyMonths.value.map((m) => Number(m.spending.toFixed(2))) },
+  { name: 'Income',   data: monthlyMonths.value.map((m) => Number(m.income.toFixed(2))) },
+]);
+
+const monthlyChartOptions = computed<ApexOptions>(() => ({
+  chart: { toolbar: { show: false }, foreColor: '#C6C6E5', stacked: false },
+  plotOptions: { bar: { horizontal: false, columnWidth: '62%', borderRadius: 4 } },
+  dataLabels: { enabled: false },
+  legend: { show: true, position: 'top', horizontalAlign: 'right', labels: { colors: '#B0B0C3' } },
+  stroke: { show: true, width: 2, colors: ['transparent'] },
+  xaxis: {
+    categories: monthlyMonths.value.map((m) => m.label),
+    labels: { style: { colors: '#B0B0C3' } },
+  },
+  yaxis: { labels: { formatter: (v) => `$${Number(v).toLocaleString()}`, style: { colors: '#B0B0C3' } } },
+  tooltip: { y: { formatter: (v) => `$${Number(v).toLocaleString()}` } },
+  grid: { borderColor: '#1F1F3A' },
+  fill: { opacity: 1 },
+  colors: ['#6C4ED4', '#22C55E'],
+}));
+
+const hasMonthlyData = computed(() => monthlyMonths.value.some((m) => m.spending !== 0 || m.income !== 0));
+
+async function loadMonthly(year?: number) {
+  monthlyLoading.value = true;
+  try {
+    monthly.value = await api.getMonthlyBreakdown(year);
+    selectedYear.value = monthly.value.year;
+  } catch (err) {
+    console.error(err);
+  } finally {
+    monthlyLoading.value = false;
+  }
+}
+
+function onYearChange(year: number) {
+  void loadMonthly(year);
+}
+
 async function loadReports() {
   loading.value = true;
   loadError.value = '';
@@ -266,7 +373,10 @@ async function loadReports() {
   }
 }
 
-onMounted(loadReports);
+onMounted(() => {
+  void loadReports();
+  void loadMonthly();
+});
 </script>
 
 <style lang="scss">
@@ -304,4 +414,22 @@ onMounted(loadReports);
 .bb-no-data { display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 14px; background: #11112A; border: 1px dashed rgba(108, 78, 212, 0.3); border-radius: 18px; padding: 40px; text-align: center; }
 .bb-no-data-title { font-size: 20px; font-weight: 700; }
 .bb-no-data-sub { color: #8F8FB5; max-width: 420px; }
+
+.bb-year-select { min-width: 110px; }
+.bb-month-table { margin-top: 20px; display: flex; flex-direction: column; }
+.bb-month-row {
+  display: grid; grid-template-columns: 1.2fr 1fr 1fr 1fr 0.8fr; gap: 12px;
+  align-items: center; padding: 10px 4px;
+  border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 13px; color: #E2E2FF;
+}
+.bb-month-row:last-child { border-bottom: none; }
+.bb-month-row--head {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em;
+  color: #8F8FB5; font-weight: 600;
+}
+.bb-month-num { text-align: right; font-variant-numeric: tabular-nums; }
+.bb-month-muted { color: #6E6E9A; }
+.bb-amt-income { color: #22C55E; }
+.bb-amt-neg { color: #EF4444; }
+.bb-month-empty { color: #8F8FB5; padding: 24px 0; text-align: center; }
 </style>

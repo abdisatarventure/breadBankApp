@@ -90,14 +90,67 @@
     <q-page-container>
       <router-view />
     </q-page-container>
+
+    <!-- Low Claude credit warning — shown once per login when running low. -->
+    <q-dialog v-model="creditDialogOpen">
+      <q-card class="bb-credit-card">
+        <div class="bb-credit-hdr">
+          <q-icon :name="creditExhausted ? 'error' : 'warning_amber'" size="22px"
+            :style="`color:${creditExhausted ? '#EF4444' : '#F59E0B'}`" />
+          <span>{{ creditExhausted ? 'Claude credits depleted' : 'Claude credits running low' }}</span>
+        </div>
+
+        <div class="bb-credit-balance">
+          <div class="bb-credit-remaining" :style="`color:${creditExhausted ? '#EF4444' : '#F59E0B'}`">
+            {{ fmtUsd(creditStatus?.creditRemainingUsd ?? 0) }}
+          </div>
+          <div class="bb-credit-sub">
+            estimated left of {{ fmtUsd(creditStatus?.creditTotalUsd ?? 0) }}
+            · {{ fmtUsd(creditStatus?.creditSpentAllTimeUsd ?? 0) }} used
+          </div>
+          <div class="bb-credit-track">
+            <div class="bb-credit-fill" :style="{
+              width: creditPct + '%',
+              background: creditExhausted ? '#EF4444' : 'linear-gradient(90deg,#F59E0B,#EF4444)',
+            }" />
+          </div>
+        </div>
+
+        <div class="bb-credit-body">
+          {{ creditExhausted
+            ? 'AI features (categorization, summaries, chat) are paused until you add credits to your Anthropic account.'
+            : "When this hits $0, AI features stop working. Add credits to your Anthropic account to keep them running." }}
+        </div>
+
+        <a href="https://console.anthropic.com/settings/billing" target="_blank" rel="noopener" class="bb-credit-link">
+          <q-icon name="open_in_new" size="15px" /> Add credits in Anthropic Console
+        </a>
+
+        <div class="bb-credit-topup">
+          <div class="bb-credit-topup-lbl">Topped up? Update your total purchased credits to reset the estimate:</div>
+          <div class="row items-center q-gutter-sm">
+            <q-input v-model.number="creditTotalInput" type="number" dense outlined dark prefix="$"
+              style="max-width:130px" @keyup.enter="saveCreditTotal" />
+            <q-btn no-caps unelevated label="Update" :loading="savingCredit"
+              style="background:linear-gradient(135deg,#6C4ED4,#E040FB);color:#fff;border-radius:8px"
+              @click="saveCreditTotal" />
+          </div>
+        </div>
+
+        <div class="bb-credit-actions">
+          <q-btn flat no-caps label="Dismiss" style="color:#9090B8" v-close-popup />
+        </div>
+      </q-card>
+    </q-dialog>
   </q-layout>
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useQuasar } from 'quasar';
 import { auth } from 'src/services/auth';
+import { api, type AiStatus } from 'src/services/api';
 
 interface NavItem {
   icon: string;
@@ -125,7 +178,9 @@ const generalNav: NavItem[] = [
   { icon: 'receipt_long', label: 'Transactions', path: '/app/transactions' },
   { icon: 'upload_file', label: 'Upload', path: '/app/upload' },
   { icon: 'savings', label: 'Budgets', path: '/app/budgets' },
+  { icon: 'flag', label: 'Savings Goals', path: '/app/goals' },
   { icon: 'autorenew', label: 'Subscriptions', path: '/app/subscriptions' },
+  { icon: 'event', label: 'Bills', path: '/app/bills' },
   { icon: 'trending_up', label: 'Investments', path: '/app/investments' },
   { icon: 'bar_chart', label: 'Reports', path: '/app/reports' },
 ];
@@ -162,6 +217,56 @@ async function logout() {
   auth.logout();
   await router.replace('/login');
 }
+
+// ── Low Claude-credit warning ────────────────────────────────
+const creditDialogOpen = ref(false);
+const creditStatus = ref<AiStatus | null>(null);
+const creditTotalInput = ref<number | null>(null);
+const savingCredit = ref(false);
+
+const creditExhausted = computed(() => (creditStatus.value?.creditRemainingUsd ?? 1) <= 0 || !!creditStatus.value?.creditExhausted);
+const creditPct = computed(() => {
+  const s = creditStatus.value;
+  if (!s || s.creditTotalUsd <= 0) return 0;
+  return Math.min(100, Math.max(0, (s.creditRemainingUsd / s.creditTotalUsd) * 100));
+});
+
+function fmtUsd(v: number) {
+  return '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+async function saveCreditTotal() {
+  if (creditTotalInput.value == null || creditTotalInput.value < 0) return;
+  savingCredit.value = true;
+  try {
+    creditStatus.value = await api.setAiCreditTotal(creditTotalInput.value);
+    if (!creditStatus.value.creditLow) {
+      creditDialogOpen.value = false;
+      $q.notify({ type: 'positive', message: 'Credit balance updated.' });
+    }
+  } catch (e) {
+    $q.notify({ type: 'negative', message: e instanceof Error ? e.message : 'Failed to update credits' });
+  } finally {
+    savingCredit.value = false;
+  }
+}
+
+onMounted(async () => {
+  // Show the warning at most once per session (per login), so it greets you on
+  // login but doesn't nag on every navigation.
+  if (sessionStorage.getItem('bb_credit_warned') === '1') return;
+  try {
+    const status = await api.getAiStatus();
+    creditStatus.value = status;
+    creditTotalInput.value = status.creditTotalUsd;
+    if (status.creditLow) {
+      creditDialogOpen.value = true;
+      sessionStorage.setItem('bb_credit_warned', '1');
+    }
+  } catch {
+    // Status is best-effort; never block the app on it.
+  }
+});
 </script>
 
 <style lang="scss">
@@ -312,5 +417,36 @@ async function logout() {
   font-weight: 500;
   color: #ffffff;
 }
+
+/* ── Low-credit warning dialog ─────────────────────────────── */
+.bb-credit-card {
+  width: 420px; max-width: 92vw;
+  background: #0F1030 !important; color: #E6E6F5;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 16px; padding: 24px;
+}
+.bb-credit-hdr {
+  display: flex; align-items: center; gap: 10px;
+  font-size: 17px; font-weight: 700; color: #F8FAFF; margin-bottom: 16px;
+}
+.bb-credit-balance { text-align: center; margin-bottom: 16px; }
+.bb-credit-remaining { font-size: 34px; font-weight: 800; letter-spacing: -0.5px; }
+.bb-credit-sub { font-size: 12px; color: #8F8FB5; margin-top: 2px; }
+.bb-credit-track {
+  height: 7px; margin-top: 12px;
+  background: rgba(255,255,255,0.07); border-radius: 4px; overflow: hidden;
+}
+.bb-credit-fill { height: 100%; border-radius: 4px; transition: width 0.5s ease; }
+.bb-credit-body { font-size: 13px; line-height: 1.5; color: #C6C6E5; margin-bottom: 16px; }
+.bb-credit-link {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 13px; font-weight: 600; color: #8B6FEC; text-decoration: none;
+  &:hover { color: #B79DFF; }
+}
+.bb-credit-topup {
+  margin-top: 18px; padding-top: 16px; border-top: 1px solid rgba(255,255,255,0.07);
+}
+.bb-credit-topup-lbl { font-size: 12px; color: #8F8FB5; margin-bottom: 8px; }
+.bb-credit-actions { display: flex; justify-content: flex-end; margin-top: 16px; }
 
 </style>

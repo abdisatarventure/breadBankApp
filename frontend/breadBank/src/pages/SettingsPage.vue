@@ -45,6 +45,41 @@
           <div class="bb-set-metric-val" :style="`color:${statusColor}`">{{ statusLabel }}</div>
           <div class="bb-set-metric-sub">{{ ai.creditExhausted ? 'last call failed' : 'API reachable' }}</div>
         </div>
+        <div class="bb-set-metric">
+          <div class="bb-set-metric-lbl">Credits remaining (est.)</div>
+          <div class="bb-set-metric-val" :style="`color:${ai.creditLow ? '#EF4444' : '#22C55E'}`">
+            {{ fmtUsd(ai.creditRemainingUsd) }}
+          </div>
+          <div class="bb-set-metric-sub">of {{ fmtUsd(ai.creditTotalUsd) }} · {{ fmtUsd(ai.creditSpentAllTimeUsd) }} used all-time</div>
+        </div>
+      </div>
+
+      <!-- Credit balance control -->
+      <div v-if="ai" class="bb-set-budget">
+        <div class="bb-set-metric-lbl q-mb-xs">Total Claude credits purchased (warn at {{ fmtUsd(ai.creditWarnAtUsd) }})</div>
+        <div class="row items-center q-gutter-sm">
+          <q-input
+            v-model.number="creditTotalInput"
+            type="number" dense outlined dark
+            placeholder="e.g. 5"
+            prefix="$"
+            style="max-width:160px"
+            @keyup.enter="saveCreditTotal"
+          />
+          <q-btn no-caps unelevated label="Save" :loading="savingCredit"
+            style="background:linear-gradient(135deg,#6C4ED4,#E040FB);color:#fff;border-radius:8px"
+            @click="saveCreditTotal" />
+          <a href="https://console.anthropic.com/settings/billing" target="_blank" rel="noopener" class="bb-set-link">Add credits →</a>
+        </div>
+        <div class="bb-set-bar-wrap">
+          <div class="bb-set-bar" :style="{
+            width: Math.min(100, (ai.creditRemainingUsd / Math.max(ai.creditTotalUsd, 0.01)) * 100) + '%',
+            background: ai.creditLow ? '#EF4444' : 'linear-gradient(90deg,#6C4ED4,#22C55E)',
+          }" />
+        </div>
+        <div class="bb-set-note">
+          Anthropic has no balance API, so this is estimated from token usage. After you top up, bump this total to match what you bought.
+        </div>
       </div>
 
       <!-- Budget control -->
@@ -102,6 +137,43 @@
       <div v-else class="bb-set-note">No banks linked yet. Click Connect to link one through Plaid.</div>
     </div>
 
+    <!-- ── Security question (password reset) ───────────── -->
+    <div class="bb-set-card">
+      <div class="bb-set-card-hdr">
+        <q-icon name="lock" size="18px" style="color:#8B6FEC" />
+        <span>Security question</span>
+      </div>
+
+      <div class="bb-set-note q-mb-md" style="margin-top:0">
+        <template v-if="hasSecurityQ">Current question: <span style="color:#9090B8">“{{ currentQuestion }}”</span>. </template>
+        <template v-else>You haven't set one yet. </template>
+        It lets you reset your password from the login screen if you forget it.
+      </div>
+
+      <q-banner v-if="secMsg" class="bb-set-banner" :class="secOk ? 'bb-banner-amber' : 'bb-banner-red'" dense rounded>
+        {{ secMsg }}
+      </q-banner>
+
+      <div class="bb-set-metric-lbl q-mb-xs">Question</div>
+      <q-select
+        v-model="secQuestion"
+        :options="securityQuestions"
+        outlined dense dark options-dark
+        placeholder="Choose a question"
+        style="max-width:420px"
+        class="q-mb-md"
+      />
+      <div class="bb-set-metric-lbl q-mb-xs">Answer</div>
+      <q-input v-model="secAnswer" type="text" dense outlined dark
+        placeholder="New answer" style="max-width:420px" class="q-mb-md" />
+      <div class="bb-set-metric-lbl q-mb-xs">Current password (to confirm)</div>
+      <q-input v-model="secCurrentPwd" type="password" dense outlined dark
+        placeholder="Your current password" style="max-width:420px" class="q-mb-md" />
+      <q-btn no-caps unelevated :label="hasSecurityQ ? 'Update' : 'Set question'" :loading="secSaving"
+        style="background:linear-gradient(135deg,#6C4ED4,#E040FB);color:#fff;border-radius:8px"
+        @click="saveSecurity" />
+    </div>
+
     <!-- ── Account ──────────────────────────────────────── -->
     <div class="bb-set-card">
       <div class="bb-set-card-hdr">
@@ -124,15 +196,63 @@
 import { ref, computed, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { api, type AiStatus, type PlaidLinkStatus } from 'src/services/api';
-import { auth } from 'src/services/auth';
+import { auth, SECURITY_QUESTIONS } from 'src/services/auth';
 import { usePlaidLink } from 'src/composables/usePlaidLink';
 
 const router = useRouter();
+
+// ── Security question ────────────────────────────────────────
+const securityQuestions = SECURITY_QUESTIONS;
+const hasSecurityQ = ref(false);
+const currentQuestion = ref<string | null>(null);
+const secQuestion = ref<string | null>(null);
+const secAnswer = ref('');
+const secCurrentPwd = ref('');
+const secSaving = ref(false);
+const secMsg = ref('');
+const secOk = ref(false);
+
+async function loadSecurity() {
+  try {
+    const r = await auth.getMySecurity();
+    hasSecurityQ.value = r.hasSecurityQuestion;
+    currentQuestion.value = r.question;
+    if (r.question) secQuestion.value = r.question;
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+async function saveSecurity() {
+  secMsg.value = '';
+  if (!secQuestion.value || !secAnswer.value.trim() || !secCurrentPwd.value) {
+    secMsg.value = 'Choose a question, enter an answer, and your current password.';
+    secOk.value = false;
+    return;
+  }
+  secSaving.value = true;
+  try {
+    const r = await auth.setMySecurity(secCurrentPwd.value, secQuestion.value, secAnswer.value);
+    hasSecurityQ.value = r.hasSecurityQuestion;
+    currentQuestion.value = r.question;
+    secAnswer.value = '';
+    secCurrentPwd.value = '';
+    secMsg.value = 'Security question saved.';
+    secOk.value = true;
+  } catch (e) {
+    secMsg.value = e instanceof Error ? e.message : 'Failed to save security question.';
+    secOk.value = false;
+  } finally {
+    secSaving.value = false;
+  }
+}
 
 const ai           = ref<AiStatus | null>(null);
 const aiLoading    = ref(true);
 const budgetInput  = ref<number | null>(null);
 const savingBudget = ref(false);
+const creditTotalInput = ref<number | null>(null);
+const savingCredit = ref(false);
 
 const banks   = ref<PlaidLinkStatus['linked']>([]);
 const syncing = ref(false);
@@ -163,10 +283,24 @@ async function loadAi() {
   try {
     ai.value = await api.getAiStatus();
     budgetInput.value = ai.value.monthlyBudgetUsd;
+    creditTotalInput.value = ai.value.creditTotalUsd;
   } catch (e) {
     console.error(e);
   } finally {
     aiLoading.value = false;
+  }
+}
+
+async function saveCreditTotal() {
+  if (creditTotalInput.value == null || creditTotalInput.value < 0) return;
+  savingCredit.value = true;
+  try {
+    ai.value = await api.setAiCreditTotal(creditTotalInput.value);
+    creditTotalInput.value = ai.value.creditTotalUsd;
+  } catch (e) {
+    console.error(e);
+  } finally {
+    savingCredit.value = false;
   }
 }
 
@@ -218,6 +352,7 @@ function signOut() {
 onMounted(() => {
   void loadAi();
   void loadBanks();
+  void loadSecurity();
 });
 </script>
 

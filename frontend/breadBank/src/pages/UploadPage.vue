@@ -21,6 +21,17 @@
       </div>
     </div>
 
+    <!-- Historical toggle -->
+    <div class="bb-historical-row q-mb-md">
+      <q-toggle v-model="historical" color="purple-5" dense />
+      <div class="bb-historical-text">
+        <div class="bb-historical-label">Historical backfill (Reports only)</div>
+        <div class="bb-historical-sub">
+          Use for a past year (e.g. 2025). Counts in Reports but won't change your current dashboard balances or debt.
+        </div>
+      </div>
+    </div>
+
     <!-- Drop Zone -->
     <div
       class="bb-drop-zone"
@@ -118,6 +129,7 @@ const fileInput       = ref<HTMLInputElement | null>(null);
 const lastResult      = ref<UploadResult | null>(null);
 const history         = ref<UploadHistory[]>([]);
 const loadingHistory  = ref(true);
+const historical      = ref(false);
 
 const selectedAccount = computed(() => accounts.value.find(a => a.id === selectedAccountId.value) ?? null);
 
@@ -184,7 +196,7 @@ async function processFile(file: File) {
 
   try {
     const accountType = accountTypeKey(selectedAccount.value.institution);
-    const result = await api.uploadCSV(file, selectedAccountId.value, accountType);
+    const result = await api.uploadCSV(file, selectedAccountId.value, accountType, historical.value);
     lastResult.value = result;
     await loadHistory();
   } catch (err) {
@@ -246,6 +258,14 @@ const exportTips = [
 }
 .bb-account-name { font-size: 13px; font-weight: 600; color: #ffffff; }
 .bb-account-type { font-size: 11px; color: #6E6E9A; }
+
+.bb-historical-row {
+  display: flex; align-items: flex-start; gap: 12px;
+  background: #0F1030; border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 12px; padding: 12px 16px;
+}
+.bb-historical-label { font-size: 13px; font-weight: 600; color: #ffffff; }
+.bb-historical-sub { font-size: 11px; color: #6E6E9A; margin-top: 2px; max-width: 560px; }
 
 .bb-drop-zone {
   background: #0F1030; border: 2px dashed rgba(108,78,212,0.25);

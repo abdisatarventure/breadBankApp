@@ -22,6 +22,9 @@ router.post('/', storage.single('file'), async (req: AuthRequest, res: Response)
   const userId      = req.userId;
   const accountId   = parseInt(req.body.accountId   as string);
   const accountType = req.body.accountType as string;
+  // Historical backfill (e.g. a prior year) — counts in Reports but not in the
+  // dashboard's current balances.
+  const isHistorical = req.body.historical === 'true' || req.body.historical === '1';
 
   if (!accountId || isNaN(accountId) || !accountType) {
     res.status(400).json({ error: 'accountId and accountType are required' });
@@ -33,12 +36,11 @@ router.post('/', storage.single('file'), async (req: AuthRequest, res: Response)
     const csvContent = req.file.buffer.toString('utf-8');
 
     // Verify the target account is one this user is allowed to write to
-    // (their own, or a shared/seeded account). Prevents writing transactions
-    // into another user's private account by guessing its id.
+    // Prevents writing transactions into another user's account by guessing its id.
     const acctCheck = await pool.request()
       .input('accountId', sql.Int, accountId)
       .input('userId',    sql.Int, userId)
-      .query(`SELECT id FROM accounts WHERE id = @accountId AND (user_id = @userId OR user_id IS NULL)`);
+      .query(`SELECT id FROM accounts WHERE id = @accountId AND user_id = @userId`);
     if (acctCheck.recordset.length === 0) {
       res.status(404).json({ error: 'Account not found' });
       return;
@@ -101,36 +103,58 @@ router.post('/', storage.single('file'), async (req: AuthRequest, res: Response)
       }
     }
 
-    // 4. AI categorize unknowns in batches of 50
+    // 4. AI categorize unknowns. A year of statements repeats the same merchants
+    //    hundreds of times, so categorize each DISTINCT description once and reuse
+    //    the result for every matching row. This cuts AI calls (and token cost)
+    //    from O(rows) to O(distinct merchants) and keeps the same merchant
+    //    categorized consistently across the whole upload.
+    const uniqueDescriptions: { description: string; amount: number }[] = [];
+    const seenDesc = new Set<string>();
+    for (const tx of needsAI) {
+      if (seenDesc.has(tx.description)) continue;
+      seenDesc.add(tx.description);
+      uniqueDescriptions.push({ description: tx.description, amount: tx.amount });
+    }
+
+    const aiByDesc = new Map<string, { category: string; merchant: string }>();
     const BATCH = 50;
-    for (let i = 0; i < needsAI.length; i += BATCH) {
-      const batch   = needsAI.slice(i, i + BATCH);
+    for (let i = 0; i < uniqueDescriptions.length; i += BATCH) {
+      const batch   = uniqueDescriptions.slice(i, i + BATCH);
       const results = await categorizeTransactions(
+        userId!,
         batch.map(t => ({ description: t.description, amount: t.amount })),
         accountType,
       );
-
       for (let j = 0; j < batch.length; j++) {
-        const hit          = results.find(r => r.index === j);
-        const categoryName = hit?.category ?? 'Unknown';
-        const merchant     = hit?.merchant ?? batch[j]!.description;
-
-        const categoryId = await lookupCategoryId(categoryName);
-
-        toInsert.push({ tx: batch[j]!, categoryId, merchant });
-
-        // Persist learned rule for this user (skip Unknown)
-        if (categoryName !== 'Unknown' && merchant && categoryId) {
-          await pool.request()
-            .input('userId',     sql.Int,           userId)
-            .input('pattern',    sql.NVarChar(200), merchant)
-            .input('categoryId', sql.Int,           categoryId)
-            .query(`
-              IF NOT EXISTS (SELECT 1 FROM merchant_rules WHERE merchant_pattern = @pattern AND user_id = @userId)
-                INSERT INTO merchant_rules (user_id, merchant_pattern, category_id) VALUES (@userId, @pattern, @categoryId)
-            `);
-        }
+        const hit = results.find(r => r.index === j);
+        aiByDesc.set(batch[j]!.description, {
+          category: hit?.category ?? 'Unknown',
+          merchant: hit?.merchant ?? batch[j]!.description,
+        });
       }
+    }
+
+    // Apply each description's result to every matching transaction.
+    for (const tx of needsAI) {
+      const ai = aiByDesc.get(tx.description) ?? { category: 'Unknown', merchant: tx.description };
+      const categoryId = await lookupCategoryId(ai.category);
+      toInsert.push({ tx, categoryId, merchant: ai.merchant });
+    }
+
+    // Learn one merchant rule per distinct description (skip Unknown) so future
+    // uploads skip the AI entirely for these payees.
+    for (const ai of aiByDesc.values()) {
+      if (ai.category === 'Unknown' || !ai.merchant) continue;
+      const categoryId = await lookupCategoryId(ai.category);
+      if (!categoryId) continue;
+      await pool.request()
+        .input('userId',     sql.Int,           userId)
+        .input('pattern',    sql.NVarChar(200), ai.merchant)
+        .input('categoryId', sql.Int,           categoryId)
+        .query(`
+          IF NOT EXISTS (SELECT 1 FROM merchant_rules WHERE merchant_pattern = @pattern AND user_id = @userId)
+            INSERT INTO merchant_rules (user_id, merchant_pattern, category_id) VALUES (@userId, @pattern, @categoryId)
+        `);
     }
 
     // 5. Create upload record
@@ -158,11 +182,12 @@ router.post('/', storage.single('file'), async (req: AuthRequest, res: Response)
         .input('amount',     sql.Decimal(12,2), tx.amount)
         .input('type',       sql.NVarChar(10),  tx.type)
         .input('categoryId', sql.Int,           categoryId)
+        .input('isHistorical', sql.Bit,         isHistorical)
         .query(`
           INSERT INTO transactions
-            (user_id, account_id, upload_id, date, description, merchant, amount, type, category_id)
+            (user_id, account_id, upload_id, date, description, merchant, amount, type, category_id, is_historical)
           VALUES
-            (@userId, @accountId, @uploadId, @date, @description, @merchant, @amount, @type, @categoryId)
+            (@userId, @accountId, @uploadId, @date, @description, @merchant, @amount, @type, @categoryId, @isHistorical)
         `);
     }
 

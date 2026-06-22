@@ -13,11 +13,15 @@ GO
 -- ── Users ─────────────────────────────────────────────────
 IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='users' AND xtype='U')
 CREATE TABLE users (
-    id            INT IDENTITY(1,1) PRIMARY KEY,
-    email         NVARCHAR(200) NOT NULL UNIQUE,
-    password      NVARCHAR(200) NOT NULL,
-    name          NVARCHAR(100),
-    created_at    DATETIME DEFAULT GETDATE()
+    id                INT IDENTITY(1,1) PRIMARY KEY,
+    email             NVARCHAR(200) NOT NULL UNIQUE,
+    password          NVARCHAR(200) NOT NULL,
+    name              NVARCHAR(100),
+    -- Self-service password reset (no email server needed): the user picks a
+    -- question at sign-up and the answer is bcrypt-hashed, never stored plain.
+    security_question NVARCHAR(300) NULL,
+    security_answer   NVARCHAR(200) NULL,
+    created_at        DATETIME DEFAULT GETDATE()
 );
 
 -- ── Accounts ──────────────────────────────────────────────
@@ -131,21 +135,67 @@ CREATE TABLE budgets (
     CONSTRAINT UQ_budget_user_cat UNIQUE (user_id, category_id)
 );
 
--- ── AI usage (Claude token spend, per calendar month) ─────
+-- ── AI usage (Claude token spend, per user, per calendar month) ─
+-- Scoped per user so each person's Claude spend / credit warning is their own.
+-- Upgrading an OLDER (month_key-only) database? Run src/scripts/migrateMultiUser.ts.
 IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='ai_usage' AND xtype='U')
 CREATE TABLE ai_usage (
-    month_key     CHAR(7)   NOT NULL PRIMARY KEY,   -- 'YYYY-MM'
+    user_id       INT       NOT NULL,
+    month_key     CHAR(7)   NOT NULL,            -- 'YYYY-MM'
     input_tokens  BIGINT    NOT NULL DEFAULT 0,
     output_tokens BIGINT    NOT NULL DEFAULT 0,
-    updated_at    DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()
+    updated_at    DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+    CONSTRAINT PK_ai_usage PRIMARY KEY (user_id, month_key)
 );
 
--- ── Generic key/value app settings (e.g. AI monthly budget) ─
+-- ── Generic key/value app settings, per user (e.g. AI monthly budget) ─
 IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='app_settings' AND xtype='U')
 CREATE TABLE app_settings (
-    setting_key   NVARCHAR(100) NOT NULL PRIMARY KEY,
-    setting_value NVARCHAR(50)  NULL
+    user_id       INT           NOT NULL,
+    setting_key   NVARCHAR(100) NOT NULL,
+    setting_value NVARCHAR(50)  NULL,
+    CONSTRAINT PK_app_settings PRIMARY KEY (user_id, setting_key)
 );
+
+-- ── Savings goals (buckets you fund from each month's leftover) ────
+IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='savings_goals' AND xtype='U')
+CREATE TABLE savings_goals (
+    id            INT IDENTITY(1,1) PRIMARY KEY,
+    user_id       INT            NOT NULL REFERENCES users(id),
+    name          NVARCHAR(150)  NOT NULL,
+    target_amount DECIMAL(12,2)  NOT NULL,
+    target_date   DATE           NULL,                 -- optional deadline
+    icon          NVARCHAR(50)   NULL,
+    color         NVARCHAR(20)   NULL,
+    priority      INT            NOT NULL DEFAULT 0,    -- ordering / "fund first"
+    created_at    DATETIME2      DEFAULT SYSUTCDATETIME()
+);
+
+-- The one built-in "pay yourself first" bucket per user. 20% of each month's
+-- leftover is auto-reserved here before any purchase goal can be funded.
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE Name='is_reserve' AND Object_ID=Object_ID('savings_goals'))
+    ALTER TABLE savings_goals ADD is_reserve BIT NOT NULL DEFAULT 0;
+
+-- ── Savings contributions (the allocation ledger) ─────────────────
+-- One row per allocation. The source of truth for both:
+--   • "total saved so far" per goal  = SUM(amount) for that goal (persists forever)
+--   • "allocated this month"         = SUM(amount) where month_key = current month
+-- This lets the Goals tab subtract what's been allocated from this month's net
+-- savings (the "unallocated" figure) WITHOUT changing the dashboard's Net Savings.
+IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='savings_contributions' AND xtype='U')
+CREATE TABLE savings_contributions (
+    id         INT IDENTITY(1,1) PRIMARY KEY,
+    user_id    INT            NOT NULL REFERENCES users(id),
+    goal_id    INT            NOT NULL REFERENCES savings_goals(id),
+    amount     DECIMAL(12,2)  NOT NULL,
+    month_key  CHAR(7)        NOT NULL,                -- 'YYYY-MM' the money was allocated
+    created_at DATETIME2      DEFAULT SYSUTCDATETIME()
+);
+
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'idx_sc_goal')
+    CREATE INDEX idx_sc_goal ON savings_contributions(goal_id);
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'idx_sc_user_month')
+    CREATE INDEX idx_sc_user_month ON savings_contributions(user_id, month_key);
 
 -- ── Columns added by Plaid sync + manual date editing ─────
 IF NOT EXISTS (SELECT * FROM sys.columns WHERE Name='plaid_account_id' AND Object_ID=Object_ID('accounts'))
@@ -156,6 +206,15 @@ IF NOT EXISTS (SELECT * FROM sys.columns WHERE Name='plaid_transaction_id' AND O
     ALTER TABLE transactions ADD plaid_transaction_id NVARCHAR(100) NULL;
 IF NOT EXISTS (SELECT * FROM sys.columns WHERE Name='date_overridden' AND Object_ID=Object_ID('transactions'))
     ALTER TABLE transactions ADD date_overridden BIT NOT NULL DEFAULT 0;
+-- Historical / backfill rows: included in Reports but excluded from the
+-- dashboard's current account balances so a prior-year import doesn't move them.
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE Name='is_historical' AND Object_ID=Object_ID('transactions'))
+    ALTER TABLE transactions ADD is_historical BIT NOT NULL DEFAULT 0;
+-- Self-service password reset columns (safe to add to an existing users table).
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE Name='security_question' AND Object_ID=Object_ID('users'))
+    ALTER TABLE users ADD security_question NVARCHAR(300) NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE Name='security_answer' AND Object_ID=Object_ID('users'))
+    ALTER TABLE users ADD security_answer NVARCHAR(200) NULL;
 GO
 
 PRINT 'Schema created successfully.';

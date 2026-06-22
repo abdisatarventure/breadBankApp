@@ -39,10 +39,10 @@ router.post('/link-token', async (req: AuthRequest, res: Response) => {
       user: { client_user_id: String(req.userId) },
       client_name: 'BreadBank',
       products: [Products.Transactions],
-      // Initialize Investments when the institution is a brokerage (Fidelity,
-      // Robinhood) so holdings are available immediately, without forcing it on
-      // plain banks that don't support it.
-      optional_products: [Products.Investments],
+      // Initialize Investments (brokerages) and Liabilities (credit cards →
+      // payment due dates for the bill calendar) when the institution supports
+      // them, without forcing either on plain banks that don't.
+      optional_products: [Products.Investments, Products.Liabilities],
       country_codes: [CountryCode.Us],
       language: 'en',
     });
@@ -475,6 +475,7 @@ async function categorize(
   for (let i = 0; i < needsAI.length; i += BATCH) {
     const batch = needsAI.slice(i, i + BATCH);
     const results = await categorizeTransactions(
+      userId,
       batch.map((t) => ({ description: t.name, amount: t.amount })),
     );
     for (let j = 0; j < batch.length; j++) {

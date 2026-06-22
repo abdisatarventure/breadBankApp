@@ -1,5 +1,23 @@
 <template>
-  <div class="bb-login-page">
+  <div class="bb-login-page" :class="{ 'bb-app-ready': ready }">
+
+    <!-- Boot / preloading screen: plays once, then dissolves as the login
+         shell animates into place behind it. -->
+    <transition name="bb-boot">
+      <div v-if="booting" class="bb-boot">
+        <div class="bb-boot-inner">
+          <div class="bb-boot-logo">
+            <div class="bb-boot-icon">
+              <q-icon name="account_balance_wallet" size="30px" color="white" />
+            </div>
+            <span class="bb-boot-name">BreadBank</span>
+          </div>
+          <div class="bb-boot-bar"><div class="bb-boot-bar-fill"></div></div>
+          <div class="bb-boot-tag">Counting your bread…</div>
+        </div>
+      </div>
+    </transition>
+
     <div class="bb-login-shell">
 
       <!-- Animated visual panel -->
@@ -78,21 +96,94 @@
 
             <div class="bb-form-links">
               <span class="bb-link" @click="router.push('/register')">Create an account</span>
-              <span class="bb-link" @click="showForgotNotice">Forgot your password?</span>
+              <span class="bb-link" @click="openForgot">Forgot your password?</span>
             </div>
           </q-form>
         </div>
       </div>
 
     </div>
+
+    <!-- Forgot-password dialog -->
+    <q-dialog v-model="forgotOpen">
+      <q-card class="bb-forgot-card" dark>
+        <div class="bb-forgot-title">Reset password</div>
+
+        <q-banner v-if="forgotError" class="bb-error-banner q-mb-md" dense rounded>
+          {{ forgotError }}
+        </q-banner>
+
+        <template v-if="forgotStep === 'email'">
+          <div class="bb-forgot-sub">Enter your email and we'll show your security question.</div>
+          <q-input
+            v-model="forgotEmail"
+            type="email"
+            placeholder="Email"
+            outlined dense dark
+            class="bb-forgot-input"
+            @keyup.enter="fetchQuestion"
+          />
+          <q-btn
+            no-caps unelevated label="Continue"
+            class="bb-login-btn full-width q-mt-md"
+            :loading="forgotLoading"
+            @click="fetchQuestion"
+          />
+        </template>
+
+        <template v-else>
+          <div class="bb-forgot-sub">{{ forgotQuestion }}</div>
+          <q-input
+            v-model="forgotAnswer"
+            type="text"
+            placeholder="Your answer"
+            outlined dense dark
+            class="bb-forgot-input q-mb-sm"
+          />
+          <q-input
+            v-model="forgotNewPwd"
+            type="password"
+            placeholder="New password (min 8 chars)"
+            outlined dense dark
+            class="bb-forgot-input"
+            @keyup.enter="submitReset"
+          />
+          <q-btn
+            no-caps unelevated label="Reset password"
+            class="bb-login-btn full-width q-mt-md"
+            :loading="forgotLoading"
+            @click="submitReset"
+          />
+        </template>
+
+        <div class="text-center q-mt-md">
+          <span class="bb-link" @click="forgotOpen = false">Cancel</span>
+        </div>
+      </q-card>
+    </q-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { useQuasar } from 'quasar';
 import { auth } from 'src/services/auth';
+
+// Boot screen → app handoff. `booting` shows the preloader; `ready` triggers the
+// login shell's staggered entrance. They overlap briefly for a smooth crossfade.
+const booting = ref(true);
+const ready = ref(false);
+onMounted(() => {
+  const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  if (reduce) {
+    booting.value = false;
+    ready.value = true;
+    return;
+  }
+  window.setTimeout(() => { ready.value = true; }, 1300);   // shell starts revealing
+  window.setTimeout(() => { booting.value = false; }, 1650); // preloader dissolves over it
+});
 
 const email = ref('');
 const password = ref('');
@@ -102,13 +193,65 @@ const errorMessage = ref('');
 const router = useRouter();
 const $q = useQuasar();
 
-function showForgotNotice() {
-  $q.notify({
-    message: 'Password reset is not yet available. Please contact your admin for help.',
-    color: 'purple-8',
-    position: 'top',
-    timeout: 4000,
-  });
+// ── Forgot-password (security question) dialog ────────────────────────
+const forgotOpen = ref(false);
+const forgotStep = ref<'email' | 'reset'>('email');
+const forgotEmail = ref('');
+const forgotQuestion = ref('');
+const forgotAnswer = ref('');
+const forgotNewPwd = ref('');
+const forgotError = ref('');
+const forgotLoading = ref(false);
+
+function openForgot() {
+  forgotStep.value = 'email';
+  forgotEmail.value = email.value.trim();
+  forgotQuestion.value = '';
+  forgotAnswer.value = '';
+  forgotNewPwd.value = '';
+  forgotError.value = '';
+  forgotOpen.value = true;
+}
+
+async function fetchQuestion() {
+  forgotError.value = '';
+  if (!forgotEmail.value.trim()) {
+    forgotError.value = 'Enter your email first.';
+    return;
+  }
+  forgotLoading.value = true;
+  try {
+    const { question } = await auth.getSecurityQuestion(forgotEmail.value);
+    forgotQuestion.value = question;
+    forgotStep.value = 'reset';
+  } catch (err) {
+    forgotError.value = err instanceof Error ? err.message : 'Could not find a security question for that email.';
+  } finally {
+    forgotLoading.value = false;
+  }
+}
+
+async function submitReset() {
+  forgotError.value = '';
+  if (!forgotAnswer.value.trim() || !forgotNewPwd.value.trim()) {
+    forgotError.value = 'Enter your answer and a new password.';
+    return;
+  }
+  if (forgotNewPwd.value.length < 8) {
+    forgotError.value = 'New password must be at least 8 characters.';
+    return;
+  }
+  forgotLoading.value = true;
+  try {
+    await auth.resetPassword(forgotEmail.value, forgotAnswer.value, forgotNewPwd.value);
+    forgotOpen.value = false;
+    email.value = forgotEmail.value;
+    $q.notify({ message: 'Password reset — you can sign in now.', color: 'green-8', position: 'top', timeout: 4000 });
+  } catch (err) {
+    forgotError.value = err instanceof Error ? err.message : 'Could not reset your password.';
+  } finally {
+    forgotLoading.value = false;
+  }
 }
 
 const emailIsValid = computed(() => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.value));
@@ -133,6 +276,9 @@ async function handleLogin() {
     await auth.login(email.value, password.value);
     // Tell the dashboard to pull fresh bank data once, on this login.
     sessionStorage.setItem('bb_sync_on_login', '1');
+    // Privacy: start every session with amounts hidden. The user can reveal
+    // them with the dashboard's eye toggle; next login hides them again.
+    localStorage.setItem('bb_hide_amounts', '1');
     await router.push('/app/dashboard');
   } catch (err) {
     errorMessage.value = err instanceof Error ? err.message : 'Login failed. Please try again.';
@@ -165,11 +311,15 @@ async function handleLogin() {
   background: #0F0F26;
   border: 1px solid rgba(255, 255, 255, 0.07);
   box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55);
-  animation: bb-shell-in 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+  // Hidden until the boot screen hands off (.bb-app-ready), then it rises in.
+  opacity: 0;
+}
+.bb-app-ready .bb-login-shell {
+  animation: bb-shell-in 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 @keyframes bb-shell-in {
-  from { opacity: 0; transform: translateY(18px) scale(0.985); }
+  from { opacity: 0; transform: translateY(22px) scale(0.97); }
   to   { opacity: 1; transform: none; }
 }
 
@@ -272,18 +422,30 @@ async function handleLogin() {
 }
 .bb-form-inner { width: 100%; max-width: 320px; }
 
-.bb-login-title { font-size: 28px; font-weight: 700; color: #ffffff; animation: bb-rise 0.5s ease both; }
-.bb-login-sub { font-size: 13px; color: #6E6E9A; margin-top: 6px; animation: bb-rise 0.5s ease both 0.06s; }
+.bb-login-title { font-size: 28px; font-weight: 700; color: #ffffff; }
+.bb-login-sub { font-size: 13px; color: #6E6E9A; margin-top: 6px; }
 
-// Staggered entrance for the form, so the panel feels alive on load.
-@keyframes bb-rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+// Staggered entrance, kicked off once the boot screen hands off (.bb-app-ready)
+// so everything slides into place together after the preloader.
+@keyframes bb-rise { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
 // Button gets an opacity-only entrance so its persisted final transform can't
 // fight the hover-lift below.
 @keyframes bb-fade { from { opacity: 0; } to { opacity: 1; } }
-.bb-form .bb-uinput:nth-of-type(1) { animation: bb-rise 0.5s ease both 0.12s; }
-.bb-form .bb-uinput:nth-of-type(2) { animation: bb-rise 0.5s ease both 0.18s; }
-.bb-login-btn  { animation: bb-fade 0.5s ease both 0.24s; }
-.bb-form-links { animation: bb-rise 0.5s ease both 0.30s; }
+
+.bb-app-ready {
+  // Art panel content
+  .bb-brand      { animation: bb-rise 0.6s ease both 0.18s; }
+  .bb-art-title  { animation: bb-rise 0.6s ease both 0.30s; }
+  .bb-art-sub    { animation: bb-rise 0.6s ease both 0.42s; }
+
+  // Form panel content
+  .bb-login-title { animation: bb-rise 0.5s ease both 0.20s; }
+  .bb-login-sub   { animation: bb-rise 0.5s ease both 0.28s; }
+  .bb-form .bb-uinput:nth-of-type(1) { animation: bb-rise 0.5s ease both 0.36s; }
+  .bb-form .bb-uinput:nth-of-type(2) { animation: bb-rise 0.5s ease both 0.44s; }
+  .bb-login-btn  { animation: bb-fade 0.5s ease both 0.52s; }
+  .bb-form-links { animation: bb-rise 0.5s ease both 0.60s; }
+}
 
 .bb-form { margin-top: 30px; }
 
@@ -376,6 +538,128 @@ async function handleLogin() {
   font-size: 12.5px;
 }
 
+/* ── Forgot-password dialog ───────────────────────────────── */
+.bb-forgot-card {
+  width: 360px;
+  max-width: 90vw;
+  padding: 28px 26px;
+  background: #0F1030 !important;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+}
+.bb-forgot-title { font-size: 19px; font-weight: 700; color: #fff; margin-bottom: 6px; }
+.bb-forgot-sub { font-size: 13px; color: #9090B8; margin-bottom: 16px; line-height: 1.4; }
+.bb-forgot-input {
+  .q-field__control { background: rgba(255, 255, 255, 0.04) !important; }
+  &.q-field--outlined .q-field__control:before { border-color: rgba(255, 255, 255, 0.1) !important; }
+  &.q-field--focused.q-field--outlined .q-field__control:before { border-color: #6C4ED4 !important; }
+}
+
+/* ── Boot / preloading screen ─────────────────────────────── */
+.bb-boot {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background:
+    radial-gradient(1200px 600px at 15% 10%, rgba(108, 78, 212, 0.22), transparent 60%),
+    radial-gradient(900px 500px at 90% 90%, rgba(224, 64, 251, 0.18), transparent 60%),
+    #070714;
+
+  // Two soft glows drifting behind the logo for depth.
+  &::before, &::after {
+    content: '';
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(60px);
+    mix-blend-mode: screen;
+    opacity: 0.55;
+  }
+  &::before {
+    width: 380px; height: 380px; top: 12%; left: 14%;
+    background: radial-gradient(circle at 35% 30%, #9b7bff, #6c4ed4 50%, transparent 72%);
+    animation: bb-float-1 14s ease-in-out infinite alternate;
+  }
+  &::after {
+    width: 320px; height: 320px; bottom: 10%; right: 14%;
+    background: radial-gradient(circle at 35% 30%, #ff7ce0, #e040fb 52%, transparent 74%);
+    animation: bb-float-2 18s ease-in-out infinite alternate;
+  }
+}
+
+.bb-boot-inner {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 26px;
+}
+
+.bb-boot-logo { display: flex; align-items: center; gap: 16px; }
+
+.bb-boot-icon {
+  width: 64px; height: 64px; flex-shrink: 0;
+  border-radius: 18px;
+  background: linear-gradient(135deg, #6C4ED4, #E040FB);
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 12px 44px rgba(108, 78, 212, 0.6);
+  animation:
+    bb-boot-pop 0.8s cubic-bezier(0.22, 1, 0.36, 1) both,
+    bb-boot-pulse 2.2s ease-in-out 0.8s infinite;
+}
+
+.bb-boot-name {
+  font-size: 30px; font-weight: 800; letter-spacing: -0.5px;
+  background: linear-gradient(90deg, #ffffff 0%, #c9b6ff 50%, #ffffff 100%);
+  background-size: 220% auto;
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent; color: transparent;
+  animation:
+    bb-boot-reveal 0.7s ease 0.25s both,
+    bb-boot-shimmer 2.6s linear 1s infinite;
+}
+
+.bb-boot-bar {
+  width: 190px; height: 4px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+.bb-boot-bar-fill {
+  height: 100%; width: 100%;
+  border-radius: 4px;
+  background: linear-gradient(90deg, #6C4ED4, #E040FB);
+  transform-origin: left center;
+  transform: scaleX(0);
+  animation: bb-boot-fill 1.5s cubic-bezier(0.6, 0, 0.2, 1) 0.2s forwards;
+}
+
+.bb-boot-tag {
+  font-size: 12px; letter-spacing: 0.3px;
+  color: rgba(248, 250, 255, 0.55);
+  animation: bb-boot-reveal 0.7s ease 0.5s both;
+}
+
+@keyframes bb-boot-pop {
+  0%   { opacity: 0; transform: scale(0.4) rotate(-14deg); }
+  60%  { opacity: 1; transform: scale(1.1) rotate(4deg); }
+  100% { opacity: 1; transform: none; }
+}
+@keyframes bb-boot-pulse {
+  0%, 100% { box-shadow: 0 12px 40px rgba(108, 78, 212, 0.45); }
+  50%      { box-shadow: 0 12px 64px rgba(224, 64, 251, 0.8); }
+}
+@keyframes bb-boot-reveal { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@keyframes bb-boot-shimmer { to { background-position: 220% center; } }
+@keyframes bb-boot-fill { to { transform: scaleX(1); } }
+
+// Exit: the whole boot screen fades and zooms out, revealing the shell beneath.
+.bb-boot-leave-active { transition: opacity 0.6s ease, transform 0.6s cubic-bezier(0.22, 1, 0.36, 1); }
+.bb-boot-leave-to { opacity: 0; transform: scale(1.08); }
+
 /* ── Responsive: stack and drop the art panel on small screens ─ */
 @media (max-width: 820px) {
   .bb-login-art { display: none; }
@@ -383,11 +667,14 @@ async function handleLogin() {
   .bb-login-form { padding: 36px 28px; }
 }
 
-/* Respect users who prefer reduced motion. */
+/* Respect users who prefer reduced motion. The boot screen is skipped in JS, so
+   just make sure the shell (hidden by default) is shown without animation. */
 @media (prefers-reduced-motion: reduce) {
   .bb-orb, .bb-orb--ring, .bb-login-shell,
-  .bb-login-title, .bb-login-sub, .bb-uinput, .bb-login-btn, .bb-form-links {
+  .bb-login-title, .bb-login-sub, .bb-uinput, .bb-login-btn, .bb-form-links,
+  .bb-brand, .bb-art-title, .bb-art-sub {
     animation: none;
   }
+  .bb-login-shell { opacity: 1; }
 }
 </style>

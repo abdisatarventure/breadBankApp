@@ -126,7 +126,7 @@ export function parseAppleCard(csv: string): ParsedTransaction[] {
     .reduce<ParsedTransaction[]>((acc, r) => {
       const parsedDate = parseDate(r['Transaction Date'] ?? '');
       if (!parsedDate) return acc;
-      const amount = parseFloat((r['Amount (USD)'] ?? '0').replace(',', ''));
+      const amount = parseFloat((r['Amount (USD)'] ?? '0').replace(/,/g, ''));
       if (isNaN(amount)) return acc;
       const isPayment = (r['Type'] ?? '').toLowerCase() === 'payment';
       acc.push({
@@ -151,7 +151,7 @@ export function parseDiscover(csv: string): ParsedTransaction[] {
     .reduce<ParsedTransaction[]>((acc, r) => {
       const parsedDate = parseDate(r['Trans. Date'] ?? r['Transaction Date'] ?? '');
       if (!parsedDate) return acc;
-      const amount = parseFloat((r['Amount'] ?? '0').replace(',', ''));
+      const amount = parseFloat((r['Amount'] ?? '0').replace(/,/g, ''));
       if (isNaN(amount)) return acc;
       // Discover: positive amount = purchase (debit), negative = payment/credit.
       const desc      = r['Description'] ?? '';
@@ -169,6 +169,11 @@ export function parseDiscover(csv: string): ParsedTransaction[] {
 }
 
 export function parseCSV(csv: string, accountType: string): ParsedTransaction[] {
+  // Strip a leading UTF-8 BOM. Excel/Discover/Apple exports often prepend one,
+  // which otherwise corrupts the first column's header (e.g. "Trans. Date"
+  // becomes "Trans. Date") and makes every header-keyed lookup miss.
+  if (csv.charCodeAt(0) === 0xFEFF) csv = csv.slice(1);
+
   switch (accountType) {
     case 'apple-card':   return parseAppleCard(csv);
     case 'discover':     return parseDiscover(csv);

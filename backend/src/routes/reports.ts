@@ -1,7 +1,7 @@
 import { Router, Response } from 'express';
 import { getPool, sql } from '../config/db';
 import { AuthRequest } from '../middleware/auth';
-import { SPEND_AMOUNT, NET_SPEND, SPENDING_FILTER } from '../config/spending';
+import { SPEND_AMOUNT, INCOME_AMOUNT, NET_SPEND, SPENDING_FILTER } from '../config/spending';
 
 const router = Router();
 
@@ -109,6 +109,65 @@ router.get('/', async (req: AuthRequest, res: Response) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to load reports data' });
+  }
+});
+
+// GET /api/reports/monthly?year=YYYY
+// Per-month spending / income / net for one calendar year, plus the list of
+// years that actually have data so the UI can offer a year picker. Defaults to
+// the most recent year with transactions (so a one-off backfill of, say, all of
+// 2025 shows up even when "today" is in 2026).
+router.get('/monthly', async (req: AuthRequest, res: Response) => {
+  try {
+    const pool = getPool();
+    const userId = req.userId;
+
+    const yearsRes = await pool.request()
+      .input('userId', sql.Int, userId)
+      .query(`SELECT DISTINCT YEAR(date) AS y FROM transactions WHERE user_id = @userId ORDER BY y DESC`);
+    const availableYears = (yearsRes.recordset as { y: number }[]).map((r) => r.y);
+
+    const requestedYear = Number(req.query.year);
+    const year = Number.isInteger(requestedYear) && requestedYear >= 2000 && requestedYear <= 2100
+      ? requestedYear
+      : (availableYears[0] ?? new Date().getFullYear());
+
+    const rows = await pool.request()
+      .input('userId', sql.Int, userId)
+      .input('year', sql.Int, year)
+      .query(`
+        SELECT
+          MONTH(t.date) AS m,
+          SUM(${SPEND_AMOUNT})  AS spending,
+          SUM(${INCOME_AMOUNT}) AS income
+        FROM transactions t
+        LEFT JOIN categories c ON t.category_id = c.id
+        WHERE t.user_id = @userId AND YEAR(t.date) = @year
+        GROUP BY MONTH(t.date)
+      `);
+
+    const byMonth = new Map<number, { spending: number; income: number }>();
+    for (const r of rows.recordset as { m: number; spending: number; income: number }[]) {
+      byMonth.set(r.m, { spending: r.spending ?? 0, income: r.income ?? 0 });
+    }
+
+    // Zero-fill every month Jan–Dec so the chart/table always shows 12 columns.
+    const months = Array.from({ length: 12 }, (_, i) => {
+      const m = i + 1;
+      const hit = byMonth.get(m) ?? { spending: 0, income: 0 };
+      return {
+        monthKey: `${year}-${String(m).padStart(2, '0')}`,
+        label: new Date(year, i, 1).toLocaleString('en-US', { month: 'short' }),
+        spending: hit.spending,
+        income: hit.income,
+        net: hit.income - hit.spending,
+      };
+    });
+
+    res.json({ year, availableYears, months });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to load monthly breakdown' });
   }
 });
 

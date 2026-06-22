@@ -95,7 +95,8 @@
         </div>
 
         <div v-else class="bb-bg-list">
-          <div v-for="b in data.budgets" :key="b.categoryId" class="bb-bg-row">
+          <div v-for="b in data.budgets" :key="b.categoryId" class="bb-bg-item">
+            <div class="bb-bg-row bb-bg-row--click" @click="toggleCategory(b)">
             <div class="bb-category-icon" :style="{ background: b.color || '#6C4ED4' }">
               <q-icon :name="b.icon || 'label'" size="16px" color="white" />
             </div>
@@ -103,7 +104,7 @@
               <div class="bb-bg-row-top">
                 <span class="bb-bg-name">{{ b.name }}</span>
                 <span class="bb-bg-amounts">
-                  {{ fmt(b.spent) }} / <span class="bb-bg-limit">{{ fmt(b.limit) }}
+                  {{ fmt(b.spent) }} / <span class="bb-bg-limit" @click.stop>{{ fmt(b.limit) }}
                     <q-popup-edit :model-value="b.limit" v-slot="scope" buttons
                       label-set="Save" label-cancel="Cancel"
                       @save="(val:number) => saveBudget(b.categoryId, Number(val))">
@@ -120,9 +121,36 @@
                 <span class="bb-bg-last">last month: {{ fmt(b.lastMonthSpent) }}</span>
               </div>
             </div>
-            <q-btn flat round dense size="sm" icon="delete_outline" class="bb-bg-del" @click="removeBudget(b.categoryId)">
+            <q-icon
+              name="expand_more" size="20px" class="bb-bg-chevron"
+              :class="{ open: expanded.has(b.categoryId) }"
+            />
+            <q-btn flat round dense size="sm" icon="delete_outline" class="bb-bg-del" @click.stop="removeBudget(b.categoryId)">
               <q-tooltip>Remove budget</q-tooltip>
             </q-btn>
+            </div>
+
+            <!-- Expanded: this month's transactions in this category -->
+            <div v-if="expanded.has(b.categoryId)" class="bb-bg-tx">
+              <div v-if="txLoading.has(b.categoryId)" class="bb-bg-tx-state">
+                <q-spinner color="primary" size="18px" /> <span>Loading transactions…</span>
+              </div>
+              <template v-else>
+                <div v-if="(txByCat[b.categoryId]?.length ?? 0) === 0" class="bb-bg-tx-state">
+                  No transactions in this category this month.
+                </div>
+                <div
+                  v-for="t in txByCat[b.categoryId]" :key="t.id"
+                  class="bb-bg-tx-row"
+                >
+                  <span class="bb-bg-tx-date">{{ shortDate(t.date) }}</span>
+                  <span class="bb-bg-tx-desc">{{ t.merchant || t.description }}</span>
+                  <span class="bb-bg-tx-amt" :class="{ 'is-credit': t.type === 'credit' }">
+                    {{ t.type === 'credit' ? '+' : '' }}{{ fmt(t.amount) }}
+                  </span>
+                </div>
+              </template>
+            </div>
           </div>
         </div>
 
@@ -211,7 +239,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
 import { useQuasar } from 'quasar';
-import { api, type BudgetsData, type BudgetSuggestion, type BudgetPlanItem, type Category } from 'src/services/api';
+import { api, type BudgetsData, type BudgetSuggestion, type BudgetPlanItem, type Category, type Budget, type Transaction } from 'src/services/api';
 
 const $q = useQuasar();
 
@@ -219,6 +247,11 @@ const loading = ref(true);
 const loadError = ref('');
 const data = ref<BudgetsData | null>(null);
 const categories = ref<Category[]>([]);
+
+// Expandable category rows → this month's transactions (lazy-loaded, cached).
+const expanded = ref<Set<number>>(new Set());
+const txByCat = ref<Record<number, Transaction[]>>({});
+const txLoading = ref<Set<number>>(new Set());
 const savingId = ref<number | null>(null);
 const adding = ref(false);
 const addCategory = ref<number | null>(null);
@@ -254,6 +287,44 @@ function pctOf(spent: number, limit: number) {
 function barColor(spent: number, limit: number) {
   const p = pctOf(spent, limit);
   return p >= 100 ? '#EF4444' : p >= 80 ? '#F59E0B' : '#22C55E';
+}
+function shortDate(d: string) {
+  return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+function monthStartStr() {
+  const n = new Date();
+  return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-01`;
+}
+
+// Expand/collapse a category and lazy-load this month's transactions for it.
+async function toggleCategory(b: Budget) {
+  const id = b.categoryId;
+  const next = new Set(expanded.value);
+  if (next.has(id)) {
+    next.delete(id);
+    expanded.value = next;
+    return;
+  }
+  next.add(id);
+  expanded.value = next;
+  if (txByCat.value[id]) return; // cached
+
+  const loading = new Set(txLoading.value);
+  loading.add(id);
+  txLoading.value = loading;
+  try {
+    const res = await api.getTransactions({ category: b.name, startDate: monthStartStr(), limit: '200' });
+    txByCat.value = { ...txByCat.value, [id]: res.transactions };
+  } catch (e) {
+    $q.notify({ type: 'negative', message: e instanceof Error ? e.message : 'Failed to load transactions' });
+    const reset = new Set(expanded.value);
+    reset.delete(id);
+    expanded.value = reset;
+  } finally {
+    const done = new Set(txLoading.value);
+    done.delete(id);
+    txLoading.value = done;
+  }
 }
 
 async function load() {
@@ -413,6 +484,33 @@ onMounted(load);
 .bb-bg-row-bot { display: flex; justify-content: space-between; margin-top: 5px; font-size: 11px; font-weight: 600; }
 .bb-bg-last { color: #6E6E9A; font-weight: 400; }
 .bb-bg-del { color: #6E6E9A; flex-shrink: 0; &:hover { color: #EF4444; } }
+
+// Expandable category rows
+.bb-bg-item {
+  border-radius: 10px;
+  &:has(.bb-bg-row--click:hover) { background: rgba(255,255,255,0.02); }
+}
+.bb-bg-row--click { cursor: pointer; }
+.bb-bg-chevron {
+  color: #6E6E9A; flex-shrink: 0; transition: transform 0.2s ease;
+  &.open { transform: rotate(180deg); color: #8B6FEC; }
+}
+.bb-bg-tx {
+  margin: 4px 0 6px 48px; padding: 6px 12px;
+  background: #0A0A1B; border: 1px solid rgba(255,255,255,0.06); border-radius: 10px;
+}
+.bb-bg-tx-state {
+  display: flex; align-items: center; gap: 10px;
+  color: #6E6E9A; font-size: 12px; padding: 10px 2px;
+}
+.bb-bg-tx-row {
+  display: flex; align-items: center; gap: 12px; padding: 7px 2px;
+  font-size: 13px; border-bottom: 1px solid rgba(255,255,255,0.04);
+  &:last-child { border-bottom: none; }
+}
+.bb-bg-tx-date { color: #6E6E9A; font-size: 11px; width: 52px; flex-shrink: 0; }
+.bb-bg-tx-desc { color: #D7D7EC; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bb-bg-tx-amt { color: #F8FAFF; font-weight: 600; white-space: nowrap; &.is-credit { color: #22C55E; } }
 
 .bb-bg-add {
   display: flex; align-items: center; gap: 12px; flex-wrap: wrap;

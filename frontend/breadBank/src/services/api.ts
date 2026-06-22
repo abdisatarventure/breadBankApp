@@ -37,6 +37,10 @@ export interface DashboardData {
   totalIncome: number;
   netSavings: number;
   savingsRate: number;
+  // How much of this month's net savings has been put into savings goals, and
+  // how much is still free to allocate. Net Savings itself is unaffected.
+  allocatedToGoals: number;
+  unallocatedSavings: number;
   previousMonthSpending: number;
   categoryBreakdown: { category: string; total: number }[];
   monthlyTrend: { month: string; monthKey: string; spending: number; income: number }[];
@@ -44,6 +48,34 @@ export interface DashboardData {
   parkingSpend: number;
   parkingTxCount: number;
   parkingSpendYtd: number;
+  anomalies: SpendingAnomaly[];
+}
+
+export interface SpendingAnomaly {
+  category: string;
+  color: string | null;
+  icon: string | null;
+  thisWeek: number;
+  avgWeek: number;
+  ratio: number;
+}
+
+export interface Bill {
+  id: string;
+  source: 'subscription' | 'liability';
+  name: string;
+  amount: number;
+  dueDate: string; // 'YYYY-MM-DD'
+  status: 'paid' | 'upcoming';
+  cadence?: string;
+  category?: string | null;
+  categoryColor?: string | null;
+  accountName?: string | null;
+}
+
+export interface CalendarData {
+  bills: Bill[];
+  summary: { count: number; totalUpcoming: number; dueThisWeek: number; dueThisWeekCount: number };
 }
 
 export interface ReportMerchant {
@@ -69,6 +101,20 @@ export interface ReportsData {
   topMerchants: ReportMerchant[];
   categoryTrends: ReportCategoryTrend[];
   yearOverview: ReportYearOverview;
+}
+
+export interface MonthlyBreakdownEntry {
+  monthKey: string; // 'YYYY-MM'
+  label: string;    // 'Jan'
+  spending: number;
+  income: number;
+  net: number;
+}
+
+export interface MonthlyBreakdown {
+  year: number;
+  availableYears: number[];
+  months: MonthlyBreakdownEntry[];
 }
 
 export interface Transaction {
@@ -240,6 +286,69 @@ export interface AiStatus {
   creditExhausted: boolean;
   creditExhaustedAt: string | null;
   level: 'ok' | 'warning' | 'over' | 'exhausted';
+  creditTotalUsd: number;
+  creditSpentAllTimeUsd: number;
+  creditRemainingUsd: number;
+  creditWarnAtUsd: number;
+  creditLow: boolean;
+}
+
+// ── Savings goals ──────────────────────────────────────────
+
+export interface SavingsGoal {
+  id: number;
+  name: string;
+  target: number;
+  saved: number;        // lifetime total saved into this bucket (persists)
+  remaining: number;
+  pct: number;
+  targetDate: string | null; // 'YYYY-MM-DD'
+  icon: string | null;
+  color: string | null;
+  priority: number;
+}
+
+export interface SavingsReserve {
+  id: number;
+  savedLifetime: number;       // total ever set aside into Savings
+  savedThisMonth: number;      // of this month's 20%, how much is funded
+  targetThisMonth: number;     // 20% of this month's net savings
+  remainingThisMonth: number;  // still to set aside this month
+  pct: number;
+}
+
+export interface SavingsGoalsData {
+  goals: SavingsGoal[];
+  reserve: SavingsReserve;     // the built-in "pay yourself first" bucket
+  summary: { totalSaved: number; totalTarget: number };
+  reservePct: number;          // 0.20
+  netSavings: number;          // this month's leftover (== dashboard Net Savings)
+  allocatedToOthersThisMonth: number;
+  available: number;           // the 80% pot still free for purchase goals
+}
+
+export interface SavingsSplitItem {
+  goalId: number;
+  name: string;
+  icon: string | null;
+  color: string | null;
+  remaining: number;
+  suggestedAmount: number;
+  note: string;
+}
+
+export interface SavingsSplitPlan {
+  plan: SavingsSplitItem[];
+  available: number;
+}
+
+export interface SaveGoalInput {
+  name: string;
+  target: number;
+  targetDate?: string | null;
+  icon?: string | null;
+  color?: string | null;
+  priority?: number;
 }
 
 // ── API methods ────────────────────────────────────────────
@@ -270,11 +379,12 @@ export const api = {
     }),
 
   // Upload
-  uploadCSV: (file: File, accountId: number, accountType: string) => {
+  uploadCSV: (file: File, accountId: number, accountType: string, historical = false) => {
     const form = new FormData();
     form.append('file', file);
     form.append('accountId', String(accountId));
     form.append('accountType', accountType);
+    if (historical) form.append('historical', 'true');
     return request<UploadResult>('/upload', { method: 'POST', body: form });
   },
   getUploadHistory: () => request<UploadHistory[]>('/upload/history'),
@@ -290,8 +400,19 @@ export const api = {
   // Subscriptions
   getSubscriptions: () => request<SubscriptionsData>('/subscriptions'),
 
+  // Bill calendar
+  getCalendar: (from?: string, to?: string) => {
+    const params = new URLSearchParams();
+    if (from) params.set('from', from);
+    if (to) params.set('to', to);
+    const q = params.toString();
+    return request<CalendarData>(`/calendar${q ? '?' + q : ''}`);
+  },
+
   // Reports
   getReports: () => request<ReportsData>('/reports'),
+  getMonthlyBreakdown: (year?: number) =>
+    request<MonthlyBreakdown>(`/reports/monthly${year ? `?year=${year}` : ''}`),
 
   // Budgets
   getBudgets: () => request<BudgetsData>('/budgets'),
@@ -320,6 +441,24 @@ export const api = {
     request<{ success: boolean; banks: number; imported: number }>('/plaid/sync', { method: 'POST' }),
   getInvestments: () => request<InvestmentsData>('/plaid/investments'),
 
+  // Savings goals
+  getGoals: () => request<SavingsGoalsData>('/goals'),
+  createGoal: (body: SaveGoalInput) =>
+    request<{ success: boolean; id: number }>('/goals', { method: 'POST', body: JSON.stringify(body) }),
+  updateGoal: (id: number, body: SaveGoalInput) =>
+    request<{ success: boolean }>(`/goals/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+  deleteGoal: (id: number) =>
+    request<{ success: boolean }>(`/goals/${id}`, { method: 'DELETE' }),
+  fundSavingsReserve: () =>
+    request<{ success: boolean; funded: number }>('/goals/reserve/fund', { method: 'POST' }),
+  suggestSavingsSplit: () =>
+    request<SavingsSplitPlan>('/goals/suggest', { method: 'POST' }),
+  applySavingsSplit: (items: { goalId: number; amount: number }[]) =>
+    request<{ success: boolean; applied: number; total: number; reserved: number }>('/goals/apply', {
+      method: 'POST',
+      body: JSON.stringify({ items }),
+    }),
+
   // AI
   getAiSummary: (month: number, year: number) =>
     request<AiSummary>('/ai/summary', { method: 'POST', body: JSON.stringify({ month, year }) }),
@@ -328,4 +467,6 @@ export const api = {
   getAiStatus: () => request<AiStatus>('/ai/status'),
   setAiBudget: (budget: number | null) =>
     request<AiStatus>('/ai/budget', { method: 'PUT', body: JSON.stringify({ budget }) }),
+  setAiCreditTotal: (total: number) =>
+    request<AiStatus>('/ai/credit', { method: 'PUT', body: JSON.stringify({ total }) }),
 };

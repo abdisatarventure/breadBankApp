@@ -20,15 +20,17 @@ _Drop your own images into `docs/screenshots/` (e.g. `dashboard.png`) and they'l
 
 ## Features
 
-- **Dashboard** — balances, monthly income/spending, net worth, savings rate, per-account breakdowns, and 6-month trend + category charts. One-click "hide amounts" privacy toggle.
+- **Dashboard** — balances, monthly income/spending, net worth, savings rate, per-account breakdowns, and 6-month trend + category charts. "Hide amounts" privacy toggle (defaults on at login, masks charts too) and **unusual-spending alerts** that flag a category spiking well above its 12-week norm.
 - **Transactions** — searchable, filterable, editable (category, note, **date**). Manual date edits are locked against Plaid overwrites.
 - **AI categorization** — Claude auto-files transactions; it learns your corrections as merchant rules so future imports get smarter.
 - **Budgets** — monthly limits per category with progress bars. **Build a full budget with AI** from last month's spending (it protects essentials and trims discretionary categories to a target), tighten it gradually with a one-click "trim 5%", and still edit every line by hand. Plus "where to cut back" suggestions.
 - **AI Assistant** — ask natural-language questions about your finances ("how much did I spend on food last month?", "what are my top merchants?") and get answers grounded in your own data.
 - **Smart income vs. spending** — credits are only counted as income when filed under **Income**; a credit in a spending category is treated as a **refund/reimbursement** that offsets that category (great for splitting rent or bills with a roommate). **Transfer** is excluded from both.
 - **Plaid bank linking** — live sync of balances + transactions (Wells Fargo, Discover, Fidelity, etc.). Access tokens are encrypted at rest.
+- **Savings Goals** — fund buckets (a new car, a trip, an emergency fund) from each month's leftover. A built-in **"pay yourself first" reserve** sets aside 20% of net savings before any goal can be funded, and Claude can **suggest how to split** the rest across your goals by deadline and priority.
+- **Bills & due dates** — a calendar of what's hitting your account and when, built from detected subscriptions (projected by cadence) plus credit-card payment due dates from Plaid Liabilities.
 - **Investments** — holdings, value, and gains pulled from linked brokerages.
-- **Reports, Subscriptions, Categories**, and an AI-spend tracker with a configurable monthly budget warning.
+- **Reports, Subscriptions, Categories**, and an AI-spend tracker that estimates your remaining Claude credit and warns you (in Settings and a login popup) before it runs out.
 
 ## Tech stack
 
@@ -70,7 +72,7 @@ In SQL Server, create a login the app will use, then run the schema scripts.
 CREATE LOGIN breadbank_user WITH PASSWORD = 'ChangeMe!StrongPassword1';
 ```
 
-Then run the three files in `database/` **in order** (skip `00_reset.sql` on a fresh install):
+Then run the two schema files in `database/` **in order** (skip `00_reset.sql` on a fresh install):
 
 ```
 database/01_schema.sql   -- creates the breadbank DB + all tables
@@ -181,6 +183,7 @@ The `database/*.sql` files already create the **complete** schema, so a fresh in
   cd backend
   npx ts-node src/scripts/addMerchantRule.ts "ZELLE FROM JANE DOE" "Rent"
   ```
+- `migrateMultiUser.ts` — upgrade an **older** single-user database to full per-user data separation: gives each user their own copy of the seeded accounts, and makes Claude usage + the AI budget per-user. Idempotent; fresh installs don't need it.
 - `inspect*.ts` — read-only diagnostics.
 
 ---
@@ -189,8 +192,10 @@ The `database/*.sql` files already create the **complete** schema, so a fresh in
 
 - **Bring your own keys.** Everyone runs BreadBank with their **own** credentials. `ANTHROPIC_API_KEY` is required for the AI features; generate your own `JWT_SECRET` and `PLAID_ENC_KEY` (one-liners in [step 3](#3-configure-the-backend)). Plaid is optional — without it, everything except live bank linking still works.
 - **Secrets stay local.** `backend/.env` and `frontend/breadBank/.env` are gitignored and never committed — your API keys, DB password, and tokens live only on your machine. Only the `.env.example` templates are in the repo.
-- **The seeded accounts are just examples.** `database/02_seed.sql` adds sample accounts (Wells Fargo, Apple Card, Discover, Fidelity, Robinhood) so you can start uploading CSVs right away. Ignore them, upload into them, or replace them — they hold no data until you add transactions.
-- **First run = create an account.** There's no default login; click **Create an account** on first launch. Each registered user only sees their own data.
+- **Every user gets their own starter accounts.** When you register, BreadBank creates a private set of example accounts for you (Wells Fargo, Apple Card, Discover, Fidelity, Robinhood) so you can start uploading CSVs right away. Ignore them, upload into them, or replace them — they hold no data until you add transactions, and they're never shared with other users.
+- **Your data is fully separated per user.** Transactions, accounts, budgets, merchant rules, linked banks, AI spend, and the AI budget are all scoped to the signed-in user — nothing bleeds across accounts. Upgrading a database created before this change? Run `npx ts-node src/scripts/migrateMultiUser.ts` once (see [`backend/src/scripts/`](#backendsrcscripts)).
+- **First run = create an account.** There's no default login; click **Create an account** on first launch. You'll also pick a **security question** — it's what lets you reset your own password later (set or change it anytime under Settings → Security question).
+- **Forgot your password?** On the login screen, click **Forgot your password?**, enter your email, answer your security question, and set a new one. No email server required.
 - **Splitting bills / refunds.** Money coming back to you isn't income — file it under the **same category as the expense**. A roommate Zelling you their share of rent into your **Rent** category (or a store refund into **Shopping**) automatically reduces that category's spending rather than inflating your income. Only credits in the **Income** category count as income. For a recurring payer, add a forward rule once (see [`addMerchantRule.ts`](#backendsrcscripts)) so every future payment is filed automatically.
 
 ---
@@ -201,6 +206,7 @@ The `database/*.sql` files already create the **complete** schema, so a fresh in
 - **Login/connection fails** → confirm SQL Server allows **SQL authentication**, the `breadbank_user` login exists, and it's a user in the `breadbank` database (step 2).
 - **`Port 3001/9000 already in use`** → `npm run kill-ports`, then `npm run dev`.
 - **AI features error** → check `ANTHROPIC_API_KEY` and that your Anthropic account has credit (the Settings page shows usage + a low-credit warning).
+- **Forgot password / "No security question is set"** → reset needs a security question on the account. If you registered before this feature, sign in and set one under **Settings → Security question**, or reset directly in SQL: `UPDATE users SET password = '<bcrypt-hash>' WHERE email = '...'`.
 - **Reaching it from your phone** → run on the same Wi-Fi, set `VITE_API_URL` to your PC's LAN IP, add that origin to `CORS_ORIGIN`, and allow ports 3001/9000 through the firewall.
 
 ## Security notes
