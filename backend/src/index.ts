@@ -1,4 +1,5 @@
 import http from 'http';
+import path from 'path';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -28,7 +29,9 @@ const allowedOrigins = process.env.CORS_ORIGIN
   ? process.env.CORS_ORIGIN.split(',')
   : ['http://localhost:9000'];
 
-app.use(helmet());
+// CSP disabled so the bundled SPA (inline styles, ApexCharts) renders; all
+// other Helmet protections stay on for both the API and the served frontend.
+app.use(helmet({ contentSecurityPolicy: false }));
 app.use(cors({ origin: allowedOrigins }));
 app.use(express.json({ limit: '1mb' }));
 
@@ -66,6 +69,19 @@ app.use('/api/budgets',      requireAuth, budgetsRouter);
 
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// ── Serve the built frontend (production) ──────────────────
+// One origin for SPA + API: the client calls a relative `/api`, so it works
+// from localhost or any LAN/remote host without CORS or per-IP rebuilds.
+// (Path resolves the same whether started from backend/dist or backend/src.)
+const spaDir = path.resolve(__dirname, '../../frontend/breadBank/dist/spa');
+app.use(express.static(spaDir));
+// History fallback: non-API GETs return index.html so client-side routing
+// survives refreshes and deep links.
+app.use((req, res, next) => {
+  if (req.method !== 'GET' || req.path.startsWith('/api')) return next();
+  res.sendFile(path.join(spaDir, 'index.html'));
 });
 
 async function start() {
