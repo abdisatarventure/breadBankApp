@@ -119,6 +119,8 @@ npm run dev      # starts API (:3001) and frontend (:9000) together
 
 Open **http://localhost:9000**, click **Create an account**, and sign in. You can now upload a CSV (Transactions → Upload) or connect a bank (Dashboard → Connect bank).
 
+> Want it running **24/7 on a Linux box** (Docker + systemd, one port, survives reboots)? See [Deploy on a Linux server (24/7)](#deploy-on-a-linux-server-247).
+
 ---
 
 ## Environment variables
@@ -151,9 +153,154 @@ Run from the **repo root**:
 | `npm run backend` | API only |
 | `npm run frontend` | Web app only |
 | `npm run install:all` | Install all dependencies (root + backend + frontend) |
-| `npm run kill-ports` | Free ports 3001/3000/9000 if a server is stuck (Windows) |
+| `npm run kill-ports` | Free ports 3001/3000/9000 if a server is stuck (Linux/macOS; uses `lsof`) |
 
 Production build of the frontend: `cd frontend/breadBank && npm run build` (outputs static files to `dist/spa`).
+
+---
+
+## Deploy on a Linux server (24/7)
+
+The Quick start above is the local/dev flow. To run BreadBank as an **always-on service** on a Linux box (e.g. a home server) — SQL Server in Docker, the API + web app served from a **single port**, managed by systemd so it survives crashes, logouts, and reboots — follow this.
+
+> **One-origin in production.** The backend also serves the built frontend, so there's just **one port** (default `3001`), no CORS, and it works from any device on your network without baking in an IP. You reach everything at `http://<server-ip>:3001`.
+
+**Prerequisites:** Docker and Node.js 20+.
+
+### 1. SQL Server in Docker
+
+Linux SQL Server has **no named instances** — it runs as a *default* instance on port 1433, so `DB_INSTANCE` must be left **empty** in `.env` (see step 3).
+
+```bash
+docker run -d --name breadbank-sql \
+  -e "ACCEPT_EULA=Y" \
+  -e "MSSQL_SA_PASSWORD=Your_Strong_SA_Pass1" \
+  -e "MSSQL_PID=Express" \
+  -p 1433:1433 \
+  -v breadbank-mssql-data:/var/opt/mssql \
+  --restart unless-stopped \
+  mcr.microsoft.com/mssql/server:2022-latest
+```
+
+> Pick the image version that matches any `.bak` you plan to restore — **you can't restore a backup into an older engine** (a SQL Server 2022 backup needs the `2022` image). `--restart unless-stopped` + the persistent volume mean your data and the container survive reboots.
+
+Create the login, database, and tables using the `sqlcmd` bundled in the image (at `/opt/mssql-tools18/bin/sqlcmd`):
+
+```bash
+SA='Your_Strong_SA_Pass1'; SQLCMD=/opt/mssql-tools18/bin/sqlcmd
+docker cp database/. breadbank-sql:/tmp/db/
+docker exec breadbank-sql $SQLCMD -S localhost -U sa -P "$SA" -C \
+  -Q "CREATE LOGIN breadbank_user WITH PASSWORD='Your_App_Pass1', CHECK_POLICY=OFF;"
+docker exec breadbank-sql $SQLCMD -S localhost -U sa -P "$SA" -C -i /tmp/db/01_schema.sql
+docker exec breadbank-sql $SQLCMD -S localhost -U sa -P "$SA" -C -i /tmp/db/02_seed.sql
+docker exec breadbank-sql $SQLCMD -S localhost -U sa -P "$SA" -C -d breadbank \
+  -Q "CREATE USER breadbank_user FOR LOGIN breadbank_user; ALTER ROLE db_owner ADD MEMBER breadbank_user;"
+```
+
+### 2. Build for production (single origin)
+
+Point the frontend at a **relative** API path and build both halves:
+
+```bash
+echo 'VITE_API_URL=/api' > frontend/breadBank/.env
+npm run install:all
+npm --prefix backend run build              # -> backend/dist
+npm --prefix frontend/breadBank run build   # -> frontend/breadBank/dist/spa
+```
+
+### 3. Configure `backend/.env` (Linux)
+
+Same as the [Environment variables](#environment-variables) reference, but `DB_INSTANCE` **must be empty**:
+
+```
+DB_SERVER=localhost
+DB_INSTANCE=                 # empty — no named instance on Linux
+DB_NAME=breadbank
+DB_USER=breadbank_user
+DB_PASSWORD=Your_App_Pass1
+# ...plus JWT_SECRET, PLAID_ENC_KEY, ANTHROPIC_API_KEY, etc.
+```
+
+`node backend/dist/index.js` now serves the API **and** the web app on `PORT`. Open `http://<server-ip>:3001`.
+
+### 4. Run 24/7 with systemd
+
+A **user service** (no root needed). Create `~/.config/systemd/user/breadbank.service`:
+
+```ini
+[Unit]
+Description=BreadBank (API + web on one origin)
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+WorkingDirectory=/home/<you>/breadBankApp/backend
+ExecStart=/usr/bin/node dist/index.js
+Environment=NODE_ENV=production
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=default.target
+```
+
+> Use the **absolute path to your `node`** in `ExecStart` (`which node` — with nvm it's under `~/.nvm/versions/node/<ver>/bin/node`). `WorkingDirectory` is the **backend** folder so the app finds `backend/.env`.
+
+Enable it, and turn on **linger** so it starts on boot *without anyone logging in*:
+
+```bash
+systemctl --user daemon-reload
+systemctl --user enable --now breadbank
+loginctl enable-linger "$USER"
+```
+
+That's it — after a reboot, Docker (enabled on boot) brings the SQL container back via `--restart unless-stopped`, and your lingering user manager starts `breadbank`. Manage it with:
+
+```bash
+systemctl --user status breadbank      # is it up?
+systemctl --user restart breadbank     # restart
+journalctl --user -u breadbank -f      # live logs
+```
+
+> If `systemctl --user` ever errors with *"Failed to connect to bus"* (some non-login shells / under `sudo`), run `export XDG_RUNTIME_DIR=/run/user/$(id -u)` first.
+
+### 5. Deploy updates after a `git pull`
+
+The service runs the **compiled build**, not your source — so a pull alone changes nothing until you rebuild and restart:
+
+```bash
+npm --prefix backend run build && npm --prefix frontend/breadBank run build && systemctl --user restart breadbank
+```
+
+If a pull changes the schema, re-run `database/01_schema.sql` — it's **idempotent** (`IF NOT EXISTS` guards everywhere, never touches existing data):
+
+```bash
+docker cp database/01_schema.sql breadbank-sql:/tmp/01_schema.sql
+docker exec breadbank-sql /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$SA" -C -i /tmp/01_schema.sql
+```
+
+### 6. Restore a `.bak` (migrating from another machine)
+
+```bash
+docker cp mydata.bak breadbank-sql:/var/opt/mssql/backup/mydata.bak
+# 1) find the logical file names inside the backup:
+docker exec breadbank-sql /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$SA" -C \
+  -Q "RESTORE FILELISTONLY FROM DISK='/var/opt/mssql/backup/mydata.bak'"
+# 2) restore (stop the app first so nothing holds the DB open):
+systemctl --user stop breadbank
+docker exec breadbank-sql /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$SA" -C -Q \
+ "RESTORE DATABASE breadbank FROM DISK='/var/opt/mssql/backup/mydata.bak' WITH \
+  MOVE 'breadbank'     TO '/var/opt/mssql/data/breadbank.mdf', \
+  MOVE 'breadbank_log' TO '/var/opt/mssql/data/breadbank_log.ldf', REPLACE;"
+# 3) re-map the restored DB user to this server's login (fixes the 'orphaned user'), then restart:
+docker exec breadbank-sql /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$SA" -C -d breadbank \
+  -Q "ALTER USER breadbank_user WITH LOGIN = breadbank_user; ALTER ROLE db_owner ADD MEMBER breadbank_user;"
+systemctl --user start breadbank
+```
+
+> **Plaid after a restore:** access tokens in the backup were encrypted with the **original machine's** `PLAID_ENC_KEY`. Put that *exact* key (plus your Plaid client ID / secret / `PLAID_ENV`) into the new `backend/.env`, or sync fails with *"unable to authenticate data"* — otherwise just re-link your banks from the dashboard.
 
 ---
 

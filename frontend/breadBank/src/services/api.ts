@@ -109,6 +109,7 @@ export interface MonthlyBreakdownEntry {
   spending: number;
   income: number;
   net: number;
+  netWorth: number; // running cumulative net, carried across years
 }
 
 export interface MonthlyBreakdown {

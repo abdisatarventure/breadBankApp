@@ -383,7 +383,10 @@ const owedFor = (a: Account) =>
 const debtBreakdown = computed(() =>
   accounts.value
     .filter(a => a.type === 'credit')
-    .map(a => ({ name: a.name, owed: owedFor(a) })),
+    .map(a => ({ name: a.name, owed: owedFor(a) }))
+    // Hide cards carrying no debt (e.g. the closed Apple Card at $0.00) so the
+    // breakdown only lists cards you actually owe on. Total Debt is unaffected.
+    .filter(d => d.owed > 0),
 );
 const totalDebt = computed(() => debtBreakdown.value.reduce((s, d) => s + d.owed, 0));
 
@@ -571,6 +574,14 @@ const trendSeries = computed(() => [
   { name: 'Income',   data: (dash.value?.monthlyTrend ?? []).map(t => Math.round(t.income)) },
 ]);
 
+// Round the y-axis up to the next $1,000 and tick once per $1,000, so the
+// gridlines step in 1,000 increments instead of ApexCharts' default ~2,000.
+const trendYMax = computed(() => {
+  const vals = (dash.value?.monthlyTrend ?? []).flatMap(t => [t.spending, t.income]);
+  const peak = Math.max(0, ...vals);
+  return Math.max(1000, Math.ceil(peak / 1000) * 1000);
+});
+
 const trendOpts = computed<ApexOptions>(() => ({
   chart: { type: 'area', background: 'transparent', toolbar: { show: false }, foreColor: '#6E6E9A' },
   colors: ['#6C4ED4', '#22C55E'],
@@ -584,6 +595,9 @@ const trendOpts = computed<ApexOptions>(() => ({
     labels: { style: { colors: '#6E6E9A', fontSize: '11px' } },
   },
   yaxis: {
+    min: 0,
+    max: trendYMax.value,
+    tickAmount: trendYMax.value / 1000,
     labels: { style: { colors: '#6E6E9A', fontSize: '11px' }, formatter: (v: number) => hideAmounts.value ? '••' : `$${v.toLocaleString()}` },
   },
   legend: { labels: { colors: '#6E6E9A' } },

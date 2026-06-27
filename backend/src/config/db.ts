@@ -29,6 +29,16 @@ let pool: sql.ConnectionPool | null = null;
 
 export async function connectDB(): Promise<void> {
   pool = await sql.connect(config);
+
+  // A pooled connection dropping (SQL Server restart, network blip) makes the
+  // ConnectionPool emit 'error'. An EventEmitter 'error' with no listener is
+  // rethrown by Node → uncaughtException → the process exits. For a 24/7 service
+  // that's an avoidable crash: log it and let the pool re-establish connections
+  // on the next request (min:0 means broken idle connections just get replaced).
+  pool.on('error', err => {
+    console.error('SQL Server pool error (will reconnect on next query):', err);
+  });
+
   console.log('✓ Connected to SQL Server (breadbank)');
 }
 

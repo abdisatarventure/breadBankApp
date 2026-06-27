@@ -175,16 +175,30 @@
                     <span class="bb-month-num">Spending</span>
                     <span class="bb-month-num">Income</span>
                     <span class="bb-month-num">Net</span>
-                    <span class="bb-month-num">vs prev</span>
+                    <span class="bb-month-num">Saved %</span>
+                    <span class="bb-month-num">Spend vs prev</span>
+                    <span class="bb-month-num">Net worth</span>
                   </div>
                   <div v-for="row in monthlyRows" :key="row.monthKey" class="bb-month-row">
                     <span>{{ row.label }}</span>
-                    <span class="bb-month-num">{{ fmt(row.spending) }}</span>
-                    <span class="bb-month-num bb-amt-income">{{ fmt(row.income) }}</span>
-                    <span class="bb-month-num" :class="row.net >= 0 ? 'bb-amt-income' : 'bb-amt-neg'">{{ fmt(row.net) }}</span>
-                    <span class="bb-month-num" :class="row.delta == null ? 'bb-month-muted' : row.delta > 0 ? 'bb-amt-neg' : 'bb-amt-income'">
-                      {{ row.delta == null ? '—' : `${row.delta > 0 ? '+' : ''}${row.delta.toFixed(0)}%` }}
-                    </span>
+                    <!-- Months that haven't started yet have no data — show "—" everywhere. -->
+                    <template v-if="row.isFuture">
+                      <span v-for="n in 6" :key="n" class="bb-month-num bb-month-muted">—</span>
+                    </template>
+                    <template v-else>
+                      <span class="bb-month-num">{{ fmt(row.spending) }}</span>
+                      <span class="bb-month-num bb-amt-income">{{ fmt(row.income) }}</span>
+                      <span class="bb-month-num" :class="row.net >= 0 ? 'bb-amt-income' : 'bb-amt-neg'">{{ fmt(row.net) }}</span>
+                      <!-- Savings rate: green when you kept money (income > spending), red when you overspent. -->
+                      <span class="bb-month-num" :class="row.savedPct == null ? 'bb-month-muted' : row.savedPct >= 0 ? 'bb-amt-income' : 'bb-amt-neg'">
+                        {{ row.savedPct == null ? '—' : `${row.savedPct >= 0 ? '+' : ''}${row.savedPct.toFixed(0)}%` }}
+                      </span>
+                      <!-- Spending change vs last month: more spending is the bad direction (red), less is good (green). -->
+                      <span class="bb-month-num" :class="row.delta == null ? 'bb-month-muted' : row.delta > 0 ? 'bb-amt-neg' : 'bb-amt-income'">
+                        {{ row.delta == null ? '—' : `${row.delta > 0 ? '+' : ''}${row.delta.toFixed(0)}%` }}
+                      </span>
+                      <span class="bb-month-num" :class="row.netWorth >= 0 ? 'bb-amt-income' : 'bb-amt-neg'">{{ fmt(row.netWorth) }}</span>
+                    </template>
                   </div>
                 </div>
               </template>
@@ -311,12 +325,22 @@ function fmt(value: number) {
 const monthlyMonths = computed(() => monthly.value?.months ?? []);
 const availableYears = computed(() => monthly.value?.availableYears ?? []);
 
-// Each month plus its change in spending vs the previous month, for the table.
+// 'YYYY-MM' of the current month; any month after it hasn't started yet.
+const currentMonthKey = (() => {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+})();
+
+// Each month plus: its change in spending vs the previous month, its savings rate
+// (net as a % of income — positive means you kept money), and whether the month
+// is still in the future (no data yet, so the table shows "—" instead of $0).
 const monthlyRows = computed(() =>
   monthlyMonths.value.map((m, i) => {
     const prev = i > 0 ? monthlyMonths.value[i - 1]!.spending : null;
     const delta = prev !== null && prev > 0 ? ((m.spending - prev) / prev) * 100 : null;
-    return { ...m, delta };
+    const savedPct = m.income > 0 ? (m.net / m.income) * 100 : null;
+    const isFuture = m.monthKey > currentMonthKey;
+    return { ...m, delta, savedPct, isFuture };
   }),
 );
 
@@ -416,10 +440,10 @@ onMounted(() => {
 .bb-no-data-sub { color: #8F8FB5; max-width: 420px; }
 
 .bb-year-select { min-width: 110px; }
-.bb-month-table { margin-top: 20px; display: flex; flex-direction: column; }
+.bb-month-table { margin-top: 20px; display: flex; flex-direction: column; overflow-x: auto; }
 .bb-month-row {
-  display: grid; grid-template-columns: 1.2fr 1fr 1fr 1fr 0.8fr; gap: 12px;
-  align-items: center; padding: 10px 4px;
+  display: grid; grid-template-columns: 0.9fr 1fr 1fr 1fr 0.8fr 1fr 1.2fr; gap: 12px;
+  align-items: center; padding: 10px 4px; min-width: 660px;
   border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 13px; color: #E2E2FF;
 }
 .bb-month-row:last-child { border-bottom: none; }

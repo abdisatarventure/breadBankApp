@@ -133,6 +133,15 @@ const historical      = ref(false);
 
 const selectedAccount = computed(() => accounts.value.find(a => a.id === selectedAccountId.value) ?? null);
 
+// Upload-card ordering: checking accounts first (Everyday Checking), the closed
+// Apple Card last, everything else in between. Stable sort keeps the API's
+// existing order within each group.
+function uploadOrder(a: Account): number {
+  if (/check/i.test(a.type ?? '') || /check/i.test(a.name ?? '')) return 0;
+  if (a.institution === 'Apple') return 2;
+  return 1;
+}
+
 function accountTypeKey(institution: string): string {
   if (institution === 'Apple') return 'apple-card';
   if (institution === 'Discover') return 'discover';
@@ -225,7 +234,9 @@ onMounted(async () => {
     api.getAccounts(),
     loadHistory(),
   ]);
-  accounts.value = accts.filter(a => a.type !== 'investment');
+  accounts.value = accts
+    .filter(a => a.type !== 'investment')
+    .sort((x, y) => uploadOrder(x) - uploadOrder(y));
   if (accounts.value[0]) selectedAccountId.value = accounts.value[0].id;
   loadingHistory.value = false;
 });

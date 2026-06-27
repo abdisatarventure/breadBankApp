@@ -132,35 +132,96 @@ router.get('/monthly', async (req: AuthRequest, res: Response) => {
       ? requestedYear
       : (availableYears[0] ?? new Date().getFullYear());
 
-    const rows = await pool.request()
-      .input('userId', sql.Int, userId)
-      .input('year', sql.Int, year)
-      .query(`
-        SELECT
-          MONTH(t.date) AS m,
-          SUM(${SPEND_AMOUNT})  AS spending,
-          SUM(${INCOME_AMOUNT}) AS income
-        FROM transactions t
-        LEFT JOIN categories c ON t.category_id = c.id
-        WHERE t.user_id = @userId AND YEAR(t.date) = @year
-        GROUP BY MONTH(t.date)
-      `);
+    const yearStart = new Date(year, 0, 1);
+
+    const [rows, netWorthRes, flowRes] = await Promise.all([
+      pool.request()
+        .input('userId', sql.Int, userId)
+        .input('year', sql.Int, year)
+        .query(`
+          SELECT
+            MONTH(t.date) AS m,
+            SUM(${SPEND_AMOUNT})  AS spending,
+            SUM(${INCOME_AMOUNT}) AS income
+          FROM transactions t
+          LEFT JOIN categories c ON t.category_id = c.id
+          WHERE t.user_id = @userId AND YEAR(t.date) = @year
+          GROUP BY MONTH(t.date)
+        `),
+
+      // The user's *real* current net worth — computed the same way the dashboard
+      // does: liquid cash (checking + savings, preferring linked/real balances and
+      // excluding HSAs) minus credit-card debt. We anchor the per-month net-worth
+      // trend to this so the latest month matches the dashboard exactly, instead
+      // of a from-zero cash-flow tally that ignores starting balances.
+      pool.request()
+        .input('userId', sql.Int, userId)
+        .query(`
+          WITH acct AS (
+            SELECT a.id, a.type, a.name, a.current_balance,
+              ISNULL((SELECT SUM(CASE WHEN t.is_historical = 0
+                                      THEN (CASE WHEN t.type='credit' THEN t.amount ELSE -t.amount END)
+                                      ELSE 0 END)
+                      FROM transactions t WHERE t.account_id = a.id AND t.user_id = @userId), 0) AS derived
+            FROM accounts a WHERE a.user_id = @userId
+          ),
+          checking AS (SELECT * FROM acct WHERE type LIKE '%check%' OR name LIKE '%check%'),
+          savings  AS (SELECT * FROM acct WHERE (type LIKE '%saving%' OR name LIKE '%saving%')
+                         AND CONCAT(type,' ',name) NOT LIKE '%hsa%'
+                         AND CONCAT(type,' ',name) NOT LIKE '%health saving%'),
+          credit   AS (SELECT * FROM acct WHERE type = 'credit')
+          SELECT
+            (CASE WHEN EXISTS(SELECT 1 FROM checking WHERE current_balance IS NOT NULL)
+                  THEN (SELECT ISNULL(SUM(current_balance),0) FROM checking WHERE current_balance IS NOT NULL)
+                  ELSE (SELECT ISNULL(SUM(derived),0) FROM checking) END)
+            + (CASE WHEN EXISTS(SELECT 1 FROM savings WHERE current_balance IS NOT NULL)
+                  THEN (SELECT ISNULL(SUM(current_balance),0) FROM savings WHERE current_balance IS NOT NULL)
+                  ELSE (SELECT ISNULL(SUM(derived),0) FROM savings) END)
+            - (SELECT ISNULL(SUM(CASE WHEN current_balance IS NOT NULL
+                                      THEN (CASE WHEN current_balance > 0 THEN current_balance ELSE 0 END)
+                                      ELSE (CASE WHEN -derived > 0 THEN -derived ELSE 0 END) END), 0) FROM credit)
+            AS netWorth
+        `),
+
+      // Net cash flow (income − spending) for everything from this year onward,
+      // so we can back the anchor out to the start of the year.
+      pool.request()
+        .input('userId', sql.Int, userId)
+        .input('yearStart', sql.Date, yearStart)
+        .query(`
+          SELECT ISNULL(SUM(${INCOME_AMOUNT}) - SUM(${SPEND_AMOUNT}), 0) AS flow
+          FROM transactions t
+          LEFT JOIN categories c ON t.category_id = c.id
+          WHERE t.user_id = @userId AND t.date >= @yearStart
+        `),
+    ]);
 
     const byMonth = new Map<number, { spending: number; income: number }>();
     for (const r of rows.recordset as { m: number; spending: number; income: number }[]) {
       byMonth.set(r.m, { spending: r.spending ?? 0, income: r.income ?? 0 });
     }
 
+    const currentNetWorth = (netWorthRes.recordset[0] as { netWorth: number } | undefined)?.netWorth ?? 0;
+    const flowFromYearStart = (flowRes.recordset[0] as { flow: number } | undefined)?.flow ?? 0;
+    // Seed so that, after adding this year's monthly flows, the latest month lands
+    // on the real current net worth (currentNetWorth = base + flowFromYearStart).
+    const base = currentNetWorth - flowFromYearStart;
+
     // Zero-fill every month Jan–Dec so the chart/table always shows 12 columns.
+    // netWorth is the running balance anchored to the real current net worth.
+    let runningNetWorth = base;
     const months = Array.from({ length: 12 }, (_, i) => {
       const m = i + 1;
       const hit = byMonth.get(m) ?? { spending: 0, income: 0 };
+      const net = hit.income - hit.spending;
+      runningNetWorth += net;
       return {
         monthKey: `${year}-${String(m).padStart(2, '0')}`,
         label: new Date(year, i, 1).toLocaleString('en-US', { month: 'short' }),
         spending: hit.spending,
         income: hit.income,
-        net: hit.income - hit.spending,
+        net,
+        netWorth: runningNetWorth,
       };
     });
 
