@@ -41,6 +41,9 @@ export interface DashboardData {
   // how much is still free to allocate. Net Savings itself is unaffected.
   allocatedToGoals: number;
   unallocatedSavings: number;
+  // Refunds (own category, excluded from income, netted out of spending).
+  refundsThisMonth: number;
+  refundsYtd: number;
   previousMonthSpending: number;
   categoryBreakdown: { category: string; total: number }[];
   monthlyTrend: { month: string; monthKey: string; spending: number; income: number }[];

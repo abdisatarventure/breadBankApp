@@ -54,6 +54,49 @@ export function isCardPayment(description: string): boolean {
   return CARD_PAYMENT_PATTERNS.some(re => re.test(description));
 }
 
+// ── Refund detection ────────────────────────────────────────────────
+// A refund is inbound money that gives back a prior charge (a merchant return,
+// a reversal, a tax refund). It must NOT count as income, and it offsets
+// spending — so it gets its own 'Refund' category (excluded from income,
+// netted out of spending). Only meaningful on credits (money coming in).
+const REFUND_PATTERNS: RegExp[] = [
+  /\bTAX\s+REF(UND)?\b/i,   // IRS / state tax refund (e.g. "IRS TREAS 310 TAX REF")
+  /IRS\s+TREAS\s+310/i,     // IRS refund ACH descriptor
+  /\bREFUND\b/i,            // explicit merchant / vendor refund
+];
+
+/** Returns true if a credit description looks like a refund. */
+export function isRefundDescription(description: string): boolean {
+  return REFUND_PATTERNS.some(re => re.test(description));
+}
+
+// ── Income detection ────────────────────────────────────────────────
+// Incoming person-to-person / deposit money that should count as income, not
+// get scattered into spending categories by the AI. Without this, an incoming
+// "ZELLE FROM <person>" can be filed under Rent/Shopping/etc. as a credit and
+// wrongly REDUCE that category's spend (even driving total spending negative).
+const INCOME_PATTERNS: RegExp[] = [
+  /ZELLE\s+FROM/i,   // money someone Zelle'd you
+];
+
+/** Returns true if a credit description looks like incoming income. */
+export function isIncomeDescription(description: string): boolean {
+  return INCOME_PATTERNS.some(re => re.test(description));
+}
+
+/**
+ * The category hint for a parsed row. Precedence: transfers first (a card
+ * payment reversal is still a transfer), then income and refunds (both only
+ * apply to credits — inbound money). Returns {} when there's nothing to hint,
+ * so callers can spread it.
+ */
+export function categoryHint(description: string, type: 'debit' | 'credit'): { category?: string } {
+  if (isTransferDescription(description)) return { category: 'Transfer' };
+  if (type === 'credit' && isIncomeDescription(description)) return { category: 'Income' };
+  if (type === 'credit' && isRefundDescription(description)) return { category: 'Refund' };
+  return {};
+}
+
 function parseDate(raw: string): Date | null {
   const s = raw.replace(/"/g, '').trim();
   if (!s) return null;
@@ -111,7 +154,7 @@ export function parseWellsFargo(csv: string): ParsedTransaction[] {
       description: desc,
       amount: Math.abs(amount),
       type: amount < 0 ? 'debit' : 'credit',
-      ...(isTransferDescription(desc) ? { category: 'Transfer' } : {}),
+      ...categoryHint(desc, amount < 0 ? 'debit' : 'credit'),
     });
   }
   return out;

@@ -160,6 +160,11 @@
               </span>
               <span class="bb-stat-cmp">vs last month</span>
             </div>
+            <!-- Refunds are excluded from income and already netted out of the
+                 spending figure above; shown here just so they're visible. -->
+            <div v-if="(dash?.refundsYtd ?? 0) > 0" class="bb-stat-cmp bb-refund-note">
+              ↩ {{ money(dash?.refundsThisMonth ?? 0) }} refunded this month · {{ money(dash?.refundsYtd ?? 0) }} YTD
+            </div>
           </div>
         </div>
 
@@ -626,6 +631,10 @@ const categoryOpts = computed<ApexOptions>(() => ({
 
 <style lang="scss">
 .bb-dash { background-color: #0A0A1B; min-height: 100vh; }
+
+/* Refund note on the (dark gradient) Monthly Spending tile — brighter than the
+   default muted caption so it reads against the purple background. */
+.bb-refund-note { margin-top: 6px; color: rgba(255,255,255,0.82) !important; font-weight: 600; }
 
 /* Unusual-spending alerts */
 .bb-anomalies { display: flex; flex-direction: column; gap: 10px; }

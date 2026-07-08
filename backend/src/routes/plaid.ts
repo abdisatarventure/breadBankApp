@@ -7,6 +7,7 @@ import {
 } from 'plaid';
 import { plaid, PLAID_CONFIGURED } from '../config/plaid';
 import { categorizeTransactions } from '../services/aiService';
+import { categoryHint } from '../services/csvParser';
 import { getPool, sql } from '../config/db';
 import { AuthRequest } from '../middleware/auth';
 import { encryptSecret, decryptSecret } from '../config/crypto';
@@ -455,6 +456,14 @@ async function categorize(
 
   const needsAI: PlaidTransaction[] = [];
   for (const t of txs) {
+    // Self-transfers and refunds are recognized from the description (same rules
+    // as the CSV importer) so the AI never mislabels them as income/spending.
+    const hint = categoryHint(t.name, normalizeAmount(t.amount).type);
+    if (hint.category) {
+      out.set(t.transaction_id, { categoryId: await lookupCategoryId(hint.category), merchant: t.merchant_name ?? t.name });
+      continue;
+    }
+
     const rule = await pool.request()
       .input('userId', sql.Int, userId)
       .input('desc', sql.NVarChar(500), t.name)

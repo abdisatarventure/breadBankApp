@@ -5,6 +5,12 @@ import { SPEND_AMOUNT, INCOME_AMOUNT, NET_SPEND, SPENDING_FILTER } from '../conf
 
 const router = Router();
 
+// Parking spend/count that nets out reversals & refunds: a purchase (debit) adds,
+// a reversal (credit) subtracts, so a reversed charge cancels itself in both the
+// dollar total and the visit count. Safe to interpolate — no user input.
+const PARK_AMT = `(CASE WHEN t.type = 'debit' THEN t.amount ELSE -t.amount END)`;
+const PARK_CNT = `(CASE WHEN t.type = 'debit' THEN 1 ELSE -1 END)`;
+
 router.get('/', async (req: AuthRequest, res: Response) => {
   try {
     const pool = getPool();
@@ -17,7 +23,7 @@ router.get('/', async (req: AuthRequest, res: Response) => {
 
     const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
-    const [currentMo, lastMo, categories, trend, topMerchants, parking, allocated, anomalyRows] = await Promise.all([
+    const [currentMo, lastMo, categories, trend, topMerchants, parking, allocated, anomalyRows, refunds] = await Promise.all([
       pool.request()
         .input('userId', sql.Int, userId)
         .input('start', sql.Date, startOfMonth)
@@ -82,12 +88,17 @@ router.get('/', async (req: AuthRequest, res: Response) => {
         .input('yearStart', sql.Date, startOfYear)
         .query(`
           SELECT
-            SUM(CASE WHEN t.date >= @monthStart THEN t.amount ELSE 0 END) AS monthTotal,
-            SUM(CASE WHEN t.date >= @monthStart THEN 1 ELSE 0 END)        AS monthTxCount,
-            SUM(t.amount) AS yearTotal
+            SUM(CASE WHEN t.date >= @monthStart THEN ${PARK_AMT} ELSE 0 END) AS monthTotal,
+            SUM(CASE WHEN t.date >= @monthStart THEN ${PARK_CNT} ELSE 0 END) AS monthTxCount,
+            SUM(${PARK_AMT}) AS yearTotal
           FROM transactions t LEFT JOIN categories c ON t.category_id = c.id
-          WHERE t.user_id = @userId AND t.date >= @yearStart AND t.type='debit'
-            AND (t.merchant LIKE '%METROPOLIS PARKING%' OR t.description LIKE '%METROPOLIS PARKING%')
+          WHERE t.user_id = @userId AND t.date >= @yearStart
+            -- Match 'METROPOLIS P' (not the full 'METROPOLIS PARKING') so the
+            -- garage is caught however the card/bank formats it — e.g. Apple Card
+            -- shows 'METROPOLIS PARKING 144 2ND AVE', while a Visa/Wells Fargo
+            -- charge shows 'METROPOLIS P +18564856865'. Both start with the same
+            -- token, so this stays specific to the parking vendor.
+            AND (t.merchant LIKE '%METROPOLIS P%' OR t.description LIKE '%METROPOLIS P%')
             AND ISNULL(c.name,'') <> 'Transfer'
         `),
 
@@ -114,6 +125,20 @@ router.get('/', async (req: AuthRequest, res: Response) => {
             AND ${SPENDING_FILTER}
           GROUP BY c.name, c.color, c.icon
         `),
+
+      // Refunds tracked in their own 'Refund' category (excluded from income,
+      // netted out of spending) — surfaced so they're visible, not just hidden.
+      pool.request()
+        .input('userId', sql.Int, userId)
+        .input('monthStart', sql.Date, startOfMonth)
+        .input('yearStart', sql.Date, startOfYear)
+        .query(`
+          SELECT
+            ISNULL(SUM(CASE WHEN t.date >= @monthStart THEN t.amount ELSE 0 END), 0) AS monthRefunds,
+            ISNULL(SUM(t.amount), 0) AS ytdRefunds
+          FROM transactions t JOIN categories c ON c.id = t.category_id
+          WHERE t.user_id = @userId AND c.name = 'Refund' AND t.type = 'credit' AND t.date >= @yearStart
+        `),
     ]);
 
     const s = currentMo.recordset[0] as { totalSpending: number; totalIncome: number } | undefined;
@@ -124,6 +149,7 @@ router.get('/', async (req: AuthRequest, res: Response) => {
     const prevSpend   = (lastMo.recordset[0] as { totalSpending: number } | undefined)?.totalSpending ?? 0;
     const park        = parking.recordset[0] as { monthTotal: number; monthTxCount: number; yearTotal: number } | undefined;
     const allocatedToGoals = Number((allocated.recordset[0] as { allocated: number } | undefined)?.allocated ?? 0);
+    const refundRow   = refunds.recordset[0] as { monthRefunds: number; ytdRefunds: number } | undefined;
 
     // Flag categories where this week's spend is well above the prior 12-week
     // weekly average (and meaningful in dollars), so the dashboard can warn.
@@ -151,6 +177,8 @@ router.get('/', async (req: AuthRequest, res: Response) => {
       // free to put into savings goals (drives the dashboard's "unallocated" hint).
       allocatedToGoals,
       unallocatedSavings:     Math.max(0, savings - allocatedToGoals),
+      refundsThisMonth:       Number(refundRow?.monthRefunds ?? 0),
+      refundsYtd:             Number(refundRow?.ytdRefunds ?? 0),
       previousMonthSpending:  prevSpend,
       categoryBreakdown:      categories.recordset,
       monthlyTrend:           trend.recordset,
