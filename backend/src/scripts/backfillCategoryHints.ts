@@ -18,7 +18,11 @@ import { categoryHint } from '../services/csvParser';
 async function main() {
   const userId = Number(process.argv[2]);
   const apply = process.argv.includes('apply');
-  if (!Number.isInteger(userId)) { console.error('Usage: backfillCategoryHints <userId> [apply]'); process.exit(1); }
+  // Optional "only:<Category>" arg — restrict changes to a single target category
+  // so a targeted fix (e.g. just card payments) can't disturb manual edits elsewhere.
+  const onlyArg = process.argv.find((a) => a.startsWith('only:'));
+  const onlyCategory = onlyArg ? onlyArg.slice('only:'.length) : null;
+  if (!Number.isInteger(userId)) { console.error('Usage: backfillCategoryHints <userId> [apply] [only:<Category>]'); process.exit(1); }
 
   await connectDB();
   const pool = getPool();
@@ -37,15 +41,14 @@ async function main() {
   for (const t of txs.recordset as { id: number; description: string; type: 'debit' | 'credit'; category_id: number | null }[]) {
     const hint = categoryHint(t.description, t.type);
     if (!hint.category) continue;
+    if (onlyCategory && hint.category !== onlyCategory) continue;
     const targetId = idByName[hint.category];
     if (!targetId || t.category_id === targetId) continue;
     const from = t.category_id != null ? (nameById[t.category_id] ?? '(other)') : '(none)';
-    // Only rescue rows currently sitting in a SPENDING category — those are the
-    // ones wrongly denting/inflating the spending total. We deliberately do NOT
-    // reshuffle between the two non-spending buckets (Transfer <-> Income), since
-    // e.g. person-to-person Zelle already parked in Transfer is a judgment call,
-    // not a bug, and flipping it would move real money into/out of income.
-    if (from === 'Transfer' || from === 'Income') continue;
+    // categoryHint is authoritative for the patterns it matches (transfers,
+    // payroll/business income, person-to-person reimbursements, refunds), so we
+    // let it correct any current category, including reshuffling person Zelle
+    // out of Income/Transfer into Reimbursement.
     summary[`${from} -> ${hint.category}`] = (summary[`${from} -> ${hint.category}`] ?? 0) + 1;
     toChange.push({ id: t.id, targetId });
   }

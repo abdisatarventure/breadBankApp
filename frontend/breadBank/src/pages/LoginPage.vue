@@ -94,6 +94,18 @@
               :disable="!canSubmit || loading"
             />
 
+            <div class="bb-demo-divider"><span>or</span></div>
+
+            <q-btn
+              no-caps outline
+              icon="explore"
+              label="Try the demo — no signup"
+              class="bb-demo-btn"
+              :loading="demoLoading"
+              :disable="loading || demoLoading"
+              @click="handleDemo"
+            />
+
             <div class="bb-form-links">
               <span class="bb-link" @click="router.push('/register')">Create an account</span>
               <span class="bb-link" @click="openForgot">Forgot your password?</span>
@@ -189,6 +201,7 @@ const email = ref('');
 const password = ref('');
 const showPwd = ref(false);
 const loading = ref(false);
+const demoLoading = ref(false);
 const errorMessage = ref('');
 const router = useRouter();
 const $q = useQuasar();
@@ -284,6 +297,25 @@ async function handleLogin() {
     errorMessage.value = err instanceof Error ? err.message : 'Login failed. Please try again.';
   } finally {
     loading.value = false;
+  }
+}
+
+async function handleDemo() {
+  errorMessage.value = '';
+  demoLoading.value = true;
+  try {
+    await auth.demoLogin();
+    // Demo data is static, so skip the auto Plaid sync; and show amounts (it's
+    // a showcase with fake numbers, no privacy concern).
+    sessionStorage.setItem('bb_synced_session', '1');
+    localStorage.setItem('bb_hide_amounts', '0');
+    // Kick off the guided walkthrough on the dashboard's first render.
+    localStorage.setItem('bb_show_tour', '1');
+    await router.push('/app/dashboard');
+  } catch (err) {
+    errorMessage.value = err instanceof Error ? err.message : 'Could not start the demo. Please try again.';
+  } finally {
+    demoLoading.value = false;
   }
 }
 </script>
@@ -513,6 +545,30 @@ async function handleLogin() {
     background-position: 100% 100% !important;
     box-shadow: 0 14px 34px rgba(108, 78, 212, 0.55);
   }
+  &:active { transform: translateY(0); }
+}
+
+/* "or" divider between Login and the Demo button */
+.bb-demo-divider {
+  display: flex; align-items: center; gap: 12px;
+  margin: 16px 0 12px;
+  color: #6E6E9A; font-size: 12px;
+}
+.bb-demo-divider::before, .bb-demo-divider::after {
+  content: ''; flex: 1; height: 1px; background: rgba(255,255,255,0.12);
+}
+
+.bb-demo-btn {
+  width: 100%;
+  height: 48px;
+  font-size: 14px !important;
+  font-weight: 600 !important;
+  border-radius: 999px !important;
+  color: #C8B8FF !important;
+  border: 1px solid rgba(108, 78, 212, 0.5) !important;
+  transition: background 0.2s ease, transform 0.2s ease;
+
+  &:hover { background: rgba(108, 78, 212, 0.12) !important; transform: translateY(-1px); }
   &:active { transform: translateY(0); }
 }
 

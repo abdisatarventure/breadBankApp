@@ -203,7 +203,10 @@
                 </div>
                 <div class="col-2 bb-tx-date">{{ formatDate(tx.date) }}</div>
                 <div class="col-4 bb-tx-merchant">{{ tx.merchant || tx.description }}</div>
-                <div class="col-2 bb-tx-amt">{{ fmt(tx.amount) }}</div>
+                <div class="col-2 bb-tx-amt" :class="tx.type === 'credit' ? 'bb-amt-in' : 'bb-amt-out'">
+                  {{ tx.type === 'credit' ? '+' : '−' }}{{ fmt(tx.amount) }}
+                  <span class="bb-amt-tag">{{ tx.type === 'credit' ? 'in' : 'out' }}</span>
+                </div>
                 <div class="col-3 bb-tx-cat-col">
                   <q-select
                     dense
@@ -277,7 +280,7 @@
               <div class="bb-cat-tx-merchant">{{ tx.merchant || tx.description }}</div>
               <div class="bb-cat-tx-meta">{{ formatDate(tx.date) }} · {{ tx.account_name }}</div>
             </div>
-            <div class="bb-cat-tx-amt" :class="tx.type === 'credit' ? 'bb-amt-credit' : ''">{{ fmt(tx.amount) }}</div>
+            <div class="bb-cat-tx-amt" :class="tx.type === 'credit' ? 'bb-amt-in' : 'bb-amt-out'">{{ tx.type === 'credit' ? '+' : '−' }}{{ fmt(tx.amount) }}</div>
             <q-select
               dense options-dense outlined emit-value map-options
               :options="categoryOptions"
@@ -674,6 +677,10 @@ onMounted(loadData);
 .bb-tx-merchant { color: #F8FAFF; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bb-tx-amt { color: #ffffff; font-weight: 700; text-align: right; }
 .bb-tx-header-row .bb-tx-amt { color: #8F8FB5; font-weight: inherit; }
+/* Unknown transactions: money in = green, money out = red, with an in/out tag. */
+.bb-amt-in  { color: #22C55E !important; }
+.bb-amt-out { color: #EF4444 !important; }
+.bb-amt-tag { font-size: 10px; font-weight: 600; opacity: 0.7; margin-left: 3px; text-transform: uppercase; }
 .bb-tx-check { flex: 0 0 34px; display: flex; align-items: center; }
 .bb-tx-cat-col { flex: 1 1 auto; min-width: 0; }
 .bb-tx-action-col { flex: 0 0 52px; display: flex; align-items: center; justify-content: center; }

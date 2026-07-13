@@ -3,6 +3,7 @@ import { getPool, sql } from '../config/db';
 import { AuthRequest } from '../middleware/auth';
 import { generateBudgetPlan } from '../services/aiService';
 import { NET_SPEND } from '../config/spending';
+import { categoryUsableByUser, filterUsableCategoryIds } from '../services/categoryAccess';
 
 const router = Router();
 
@@ -108,6 +109,10 @@ router.put('/', async (req: AuthRequest, res: Response) => {
       res.status(400).json({ error: 'categoryId and a non-negative limit are required' });
       return;
     }
+    if (!(await categoryUsableByUser(req.userId!, cat))) {
+      res.status(404).json({ error: 'Category not found' });
+      return;
+    }
     await getPool().request()
       .input('userId', sql.Int, req.userId)
       .input('cat', sql.Int, cat)
@@ -195,9 +200,13 @@ router.put('/bulk', async (req: AuthRequest, res: Response) => {
       return;
     }
 
-    const clean = items
+    let clean = items
       .map((i) => ({ cat: Number(i.categoryId), lim: Number(i.limit) }))
       .filter((i) => Number.isInteger(i.cat) && i.cat > 0 && Number.isFinite(i.lim) && i.lim >= 0);
+
+    // Drop any category ids that aren't visible to this user (system or own).
+    const usable = await filterUsableCategoryIds(req.userId!, clean.map((i) => i.cat));
+    clean = clean.filter((i) => usable.has(i.cat));
 
     if (clean.length === 0) {
       res.status(400).json({ error: 'no valid budget items provided' });

@@ -7,7 +7,7 @@ import {
 } from 'plaid';
 import { plaid, PLAID_CONFIGURED } from '../config/plaid';
 import { categorizeTransactions } from '../services/aiService';
-import { categoryHint } from '../services/csvParser';
+import { categoryHint, isRsmPayroll, snapPaydayDate } from '../services/csvParser';
 import { getPool, sql } from '../config/db';
 import { AuthRequest } from '../middleware/auth';
 import { encryptSecret, decryptSecret } from '../config/crypto';
@@ -44,6 +44,9 @@ router.post('/link-token', async (req: AuthRequest, res: Response) => {
       // payment due dates for the bill calendar) when the institution supports
       // them, without forcing either on plain banks that don't.
       optional_products: [Products.Investments, Products.Liabilities],
+      // Ask for up to 2 years of history instead of Plaid's ~90-day default.
+      // Fixed at link time per item, so it only helps links made from now on.
+      transactions: { days_requested: 730 },
       country_codes: [CountryCode.Us],
       language: 'en',
     });
@@ -128,12 +131,23 @@ router.post('/sync', async (req: AuthRequest, res: Response) => {
       .query(`SELECT item_id, access_token, institution FROM plaid_items WHERE user_id = @userId`);
 
     let imported = 0;
+    // Sync each linked bank independently: one bank erroring (e.g. NO_ACCOUNTS
+    // after a card is closed, or a re-auth-required item) must not abort the
+    // whole sync and leave every other account stale. Collect failures instead.
+    const failed: { institution: string; reason: string }[] = [];
     for (const item of items.recordset as { item_id: string; access_token: string; institution: string }[]) {
-      const token = decryptSecret(item.access_token);
-      await upsertAccounts(req.userId!, token, item.institution);
-      imported += await syncItem(req.userId!, token, item.item_id);
+      try {
+        const token = decryptSecret(item.access_token);
+        await upsertAccounts(req.userId!, token, item.institution);
+        imported += await syncItem(req.userId!, token, item.item_id);
+      } catch (e) {
+        const code = (e as { response?: { data?: { error_code?: string } } })?.response?.data?.error_code
+          ?? (e instanceof Error ? e.message : 'unknown error');
+        console.error(`Plaid sync failed for ${item.institution} (item ${item.item_id}): ${code}`);
+        failed.push({ institution: item.institution, reason: String(code) });
+      }
     }
-    res.json({ success: true, banks: items.recordset.length, imported });
+    res.json({ success: true, banks: items.recordset.length, imported, failed });
   } catch (err) {
     console.error('Plaid sync error:', err);
     res.status(500).json({ error: 'Failed to sync transactions' });
@@ -258,10 +272,34 @@ async function removeLinkedItem(userId: number, row: { id: number; access_token:
     const local = (await req.query(
       `SELECT id FROM accounts WHERE user_id = @userId AND plaid_account_id IN (${placeholders})`,
     )).recordset as { id: number }[];
-    for (const a of local) {
-      await pool.request().input('id', sql.Int, a.id).query(`DELETE FROM transactions WHERE account_id = @id`);
-      await pool.request().input('id', sql.Int, a.id).query(`DELETE FROM uploads WHERE account_id = @id`);
-      await pool.request().input('id', sql.Int, a.id).query(`DELETE FROM accounts WHERE id = @id`);
+
+    // ALL of it runs in one transaction so a mid-way failure rolls back cleanly
+    // instead of leaving transactions half-deleted (which is exactly how a
+    // reconnect once wiped a checking account). And we only ever remove
+    // PLAID-sourced rows — CSV/manually-imported history on the account is kept.
+    const tx = pool.transaction();
+    await tx.begin();
+    try {
+      for (const a of local) {
+        await tx.request().input('id', sql.Int, a.id)
+          .query(`DELETE FROM transactions WHERE account_id = @id AND plaid_transaction_id IS NOT NULL`);
+        const remaining = (await tx.request().input('id', sql.Int, a.id)
+          .query(`SELECT COUNT(*) AS n FROM transactions WHERE account_id = @id`))
+          .recordset[0].n as number;
+        if (remaining > 0) {
+          // Account still holds CSV/manual history — keep it, just detach Plaid.
+          await tx.request().input('id', sql.Int, a.id)
+            .query(`UPDATE accounts SET plaid_account_id = NULL, current_balance = NULL WHERE id = @id`);
+        } else {
+          // Purely Plaid-managed and now empty — safe to remove entirely.
+          await tx.request().input('id', sql.Int, a.id).query(`DELETE FROM uploads WHERE account_id = @id`);
+          await tx.request().input('id', sql.Int, a.id).query(`DELETE FROM accounts WHERE id = @id`);
+        }
+      }
+      await tx.commit();
+    } catch (e) {
+      await tx.rollback();
+      throw e;
     }
   }
 
@@ -304,8 +342,39 @@ async function upsertAccounts(userId: number, accessToken: string, institution: 
           UPDATE accounts SET current_balance = @balance, name = @name, type = @type
           WHERE plaid_account_id = @plaidAccountId AND user_id = @userId
         ELSE
-          INSERT INTO accounts (user_id, name, type, institution, plaid_account_id, current_balance)
-          VALUES (@userId, @name, @type, @institution, @plaidAccountId, @balance)
+        BEGIN
+          -- Adopt an existing unlinked account (a seeded default, a CSV-built
+          -- one, or one detached by a previous re-link) instead of inserting a
+          -- duplicate next to it: exact name match first, else the single
+          -- unlinked account with the same institution + type. Its transaction
+          -- history stays put.
+          DECLARE @adopt INT = (SELECT TOP 1 id FROM accounts
+                                WHERE user_id = @userId AND plaid_account_id IS NULL AND name = @name);
+          IF @adopt IS NULL
+             AND (SELECT COUNT(*) FROM accounts
+                  WHERE user_id = @userId AND plaid_account_id IS NULL
+                    AND institution = @institution AND type = @type) = 1
+            SET @adopt = (SELECT TOP 1 id FROM accounts
+                          WHERE user_id = @userId AND plaid_account_id IS NULL
+                            AND institution = @institution AND type = @type);
+          -- Last resort: a single EMPTY unlinked account of the same type (a
+          -- generic starter like 'Checking · My Bank') is safe to claim no
+          -- matter its branding — it has no history to mix up.
+          IF @adopt IS NULL
+             AND (SELECT COUNT(*) FROM accounts a
+                  WHERE a.user_id = @userId AND a.plaid_account_id IS NULL AND a.type = @type
+                    AND NOT EXISTS (SELECT 1 FROM transactions t WHERE t.account_id = a.id)) = 1
+            SET @adopt = (SELECT TOP 1 a.id FROM accounts a
+                          WHERE a.user_id = @userId AND a.plaid_account_id IS NULL AND a.type = @type
+                            AND NOT EXISTS (SELECT 1 FROM transactions t WHERE t.account_id = a.id));
+          IF @adopt IS NOT NULL
+            UPDATE accounts SET plaid_account_id = @plaidAccountId, current_balance = @balance,
+                                name = @name, type = @type, institution = @institution
+            WHERE id = @adopt
+          ELSE
+            INSERT INTO accounts (user_id, name, type, institution, plaid_account_id, current_balance)
+            VALUES (@userId, @name, @type, @institution, @plaidAccountId, @balance)
+        END
       `);
   }
 }
@@ -379,23 +448,44 @@ async function syncItem(userId: number, accessToken: string, itemId: string): Pr
     const { type, amount } = normalizeAmount(t.amount);
     const c = cat.get(t.transaction_id);
 
+    // RSM paychecks post a few days early — snap to the scheduled 1st/15th so the
+    // income lands in the right month. Mark date_overridden so a later Plaid
+    // "modified" event won't reset it back to the early posting date.
+    let date = t.date;
+    let dateOverridden = 0;
+    if (isRsmPayroll(t.name)) {
+      const [yy, mm, dd] = t.date.split('-').map(Number);
+      const snapped = snapPaydayDate(new Date(yy ?? 1970, (mm ?? 1) - 1, dd ?? 1));
+      date = `${snapped.getFullYear()}-${String(snapped.getMonth() + 1).padStart(2, '0')}-${String(snapped.getDate()).padStart(2, '0')}`;
+      dateOverridden = 1;
+    }
+
     await pool.request()
       .input('userId', sql.Int, userId)
       .input('accountId', sql.Int, acct.id)
       .input('uploadId', sql.Int, uploadId)
       .input('plaidTxId', sql.NVarChar(100), t.transaction_id)
-      .input('date', sql.Date, t.date)
+      .input('date', sql.Date, date)
       .input('description', sql.NVarChar(500), t.name)
       .input('merchant', sql.NVarChar(200), c?.merchant ?? t.merchant_name ?? t.name)
       .input('amount', sql.Decimal(12, 2), amount)
       .input('type', sql.NVarChar(10), type)
       .input('categoryId', sql.Int, c?.categoryId ?? null)
+      .input('dateOverridden', sql.Bit, dateOverridden)
       .query(`
         IF NOT EXISTS (SELECT 1 FROM transactions WHERE user_id = @userId AND plaid_transaction_id = @plaidTxId)
+           -- Also skip rows the user already has from a CSV upload of the same
+           -- period (same account, calendar date, amount, and direction), so a
+           -- deep Plaid backfill doesn't duplicate CSV-imported history. CSV and
+           -- Plaid descriptions never match, so text comparison can't help here.
+           AND NOT EXISTS (SELECT 1 FROM transactions
+                           WHERE user_id = @userId AND account_id = @accountId
+                             AND plaid_transaction_id IS NULL
+                             AND date = @date AND amount = @amount AND type = @type)
           INSERT INTO transactions
-            (user_id, account_id, upload_id, plaid_transaction_id, date, description, merchant, amount, type, category_id)
+            (user_id, account_id, upload_id, plaid_transaction_id, date, description, merchant, amount, type, category_id, date_overridden)
           VALUES
-            (@userId, @accountId, @uploadId, @plaidTxId, @date, @description, @merchant, @amount, @type, @categoryId)
+            (@userId, @accountId, @uploadId, @plaidTxId, @date, @description, @merchant, @amount, @type, @categoryId, @dateOverridden)
       `);
   }
 
@@ -443,6 +533,13 @@ async function categorize(
   const out = new Map<string, { categoryId: number | null; merchant: string }>();
   if (txs.length === 0) return out;
 
+  // The owner's registered name lets the hinting file Zelle moves between
+  // their own banks (e.g. "ZELLE FROM <their name>") as transfers.
+  const ownerRow = await pool.request()
+    .input('id', sql.Int, userId)
+    .query('SELECT name FROM users WHERE id = @id');
+  const ownerName = (ownerRow.recordset[0] as { name: string | null } | undefined)?.name ?? null;
+
   const categoryIdCache = new Map<string, number | null>();
   const lookupCategoryId = async (name: string): Promise<number | null> => {
     if (categoryIdCache.has(name)) return categoryIdCache.get(name)!;
@@ -458,7 +555,7 @@ async function categorize(
   for (const t of txs) {
     // Self-transfers and refunds are recognized from the description (same rules
     // as the CSV importer) so the AI never mislabels them as income/spending.
-    const hint = categoryHint(t.name, normalizeAmount(t.amount).type);
+    const hint = categoryHint(t.name, normalizeAmount(t.amount).type, ownerName);
     if (hint.category) {
       out.set(t.transaction_id, { categoryId: await lookupCategoryId(hint.category), merchant: t.merchant_name ?? t.name });
       continue;

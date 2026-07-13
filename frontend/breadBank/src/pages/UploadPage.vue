@@ -14,9 +14,30 @@
           :class="{ 'bb-account-card--active': selectedAccountId === account.id }"
           @click="selectAccount(account)"
         >
-          <q-icon :name="accountIcon(account.institution)" size="22px" :style="{ color: accountColor(account.institution) }" />
+          <q-btn
+            flat dense round size="xs" icon="close" class="bb-account-hide"
+            @click.stop="setArchived(account, true)"
+          >
+            <q-tooltip>Hide this account (keeps its data)</q-tooltip>
+          </q-btn>
+          <q-icon :name="accountIcon(account.institution, account.type)" size="22px" :style="{ color: accountColor(account.institution) }" />
           <div class="bb-account-name">{{ account.name }}</div>
           <div class="bb-account-type">{{ account.institution }}</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Hidden (archived) accounts -->
+    <div v-if="archivedAccounts.length" class="bb-hidden-accts q-mb-lg">
+      <div class="bb-hidden-title">Hidden accounts</div>
+      <div class="bb-hidden-sub">Their transactions still count in Reports; they're just hidden from uploads, credit utilization, and balances.</div>
+      <div class="bb-hidden-list">
+        <div v-for="account in archivedAccounts" :key="account.id" class="bb-hidden-item">
+          <q-icon :name="accountIcon(account.institution, account.type)" size="18px" :style="{ color: accountColor(account.institution) }" />
+          <span class="bb-hidden-name">{{ account.name }}</span>
+          <span class="bb-hidden-inst">{{ account.institution }}</span>
+          <q-btn flat dense no-caps size="sm" label="Restore" icon="undo" style="color:#8B6FEC"
+            @click="setArchived(account, false)" />
         </div>
       </div>
     </div>
@@ -110,18 +131,48 @@
             </div>
           </div>
           <div class="bb-history-date">{{ fmtDate(item.created_at) }}</div>
+          <q-btn
+            flat dense round icon="delete_outline" size="sm"
+            class="bb-history-delete"
+            @click="askUndo(item)"
+          >
+            <q-tooltip>Undo this import (removes its transactions)</q-tooltip>
+          </q-btn>
         </div>
       </div>
     </div>
+
+    <!-- Undo-import confirmation -->
+    <q-dialog v-model="undoOpen">
+      <q-card class="bb-undo-dialog">
+        <div class="bb-undo-title">Undo this import?</div>
+        <div v-if="undoTarget" class="bb-undo-text">
+          This removes the <strong>{{ undoTarget.transaction_count }}</strong> transactions imported from
+          <strong>{{ undoTarget.filename }}</strong> into {{ undoTarget.account_name }},
+          including any you've since re-categorized. You can always re-upload the file.
+        </div>
+        <div class="bb-undo-actions">
+          <q-btn flat no-caps label="Cancel" style="color:#6E6E9A" v-close-popup />
+          <q-btn
+            no-caps unelevated label="Remove transactions" :loading="undoing"
+            style="background:#EF4444;color:#fff;border-radius:8px;padding:6px 16px"
+            @click="confirmUndo"
+          />
+        </div>
+      </q-card>
+    </q-dialog>
 
   </q-page>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
+import { useQuasar } from 'quasar';
 import { api, type Account, type UploadResult, type UploadHistory } from 'src/services/api';
 
-const accounts        = ref<Account[]>([]);
+const $q = useQuasar();
+
+const allAccounts     = ref<Account[]>([]); // all non-investment accounts
 const selectedAccountId = ref<number | null>(null);
 const isDragging      = ref(false);
 const uploading       = ref(false);
@@ -130,6 +181,12 @@ const lastResult      = ref<UploadResult | null>(null);
 const history         = ref<UploadHistory[]>([]);
 const loadingHistory  = ref(true);
 const historical      = ref(false);
+
+// Active (upload target) accounts vs archived (hidden) ones.
+const accounts = computed(() =>
+  allAccounts.value.filter(a => !a.is_archived).slice().sort((x, y) => uploadOrder(x) - uploadOrder(y)),
+);
+const archivedAccounts = computed(() => allAccounts.value.filter(a => a.is_archived));
 
 const selectedAccount = computed(() => accounts.value.find(a => a.id === selectedAccountId.value) ?? null);
 
@@ -142,16 +199,21 @@ function uploadOrder(a: Account): number {
   return 1;
 }
 
+// Which backend CSV parser to use for a given institution. Unknown banks fall
+// back to the Wells Fargo parser (generic Date/Amount/Description layouts).
 function accountTypeKey(institution: string): string {
   if (institution === 'Apple') return 'apple-card';
   if (institution === 'Discover') return 'discover';
+  if (/capital\s*one/i.test(institution)) return 'capital-one';
+  if (/chase/i.test(institution)) return 'chase';
+  if (/american\s*express|amex/i.test(institution)) return 'amex';
   return 'wells-fargo';
 }
 
-function accountIcon(institution: string): string {
-  if (institution === 'Apple') return 'credit_card';
-  if (institution === 'Discover') return 'credit_card';
-  if (institution === 'Robinhood' || institution === 'Fidelity') return 'trending_up';
+function accountIcon(institution: string, type?: string): string {
+  if (type === 'credit') return 'credit_card';
+  if (type === 'investment' || institution === 'Robinhood' || institution === 'Fidelity') return 'trending_up';
+  if (institution === 'Apple' || institution === 'Discover') return 'credit_card';
   return 'account_balance';
 }
 
@@ -160,6 +222,9 @@ function accountColor(institution: string): string {
   if (institution === 'Discover') return '#F59E0B';
   if (institution === 'Robinhood') return '#22C55E';
   if (institution === 'Fidelity') return '#3B82F6';
+  if (/capital\s*one/i.test(institution)) return '#D03027';
+  if (/chase/i.test(institution)) return '#117ACA';
+  if (/american\s*express|amex/i.test(institution)) return '#2E77BB';
   return '#EF4444';
 }
 
@@ -225,19 +290,55 @@ async function loadHistory() {
   }
 }
 
+// Undo an import: confirm, then delete that upload's transactions server-side.
+const undoOpen   = ref(false);
+const undoTarget = ref<UploadHistory | null>(null);
+const undoing    = ref(false);
+
+function askUndo(item: UploadHistory) {
+  undoTarget.value = item;
+  undoOpen.value   = true;
+}
+
+async function confirmUndo() {
+  if (!undoTarget.value) return;
+  undoing.value = true;
+  try {
+    const { removedTransactions } = await api.deleteUpload(undoTarget.value.id);
+    undoOpen.value = false;
+    $q.notify({
+      type: 'positive',
+      message: `Import undone — ${removedTransactions} transaction${removedTransactions === 1 ? '' : 's'} removed.`,
+    });
+    await loadHistory();
+  } catch (e) {
+    $q.notify({ type: 'negative', message: e instanceof Error ? e.message : 'Failed to undo import' });
+  } finally {
+    undoing.value = false;
+  }
+}
+
 function fmtDate(iso: string) {
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
+async function loadAccounts() {
+  allAccounts.value = (await api.getAccounts()).filter(a => a.type !== 'investment');
+  // Keep a valid selection: fall back to the first active account.
+  if (!selectedAccount.value) selectedAccountId.value = accounts.value[0]?.id ?? null;
+}
+
+// Hide an account from uploads/utilization/balances (keeps its transactions), or restore it.
+async function setArchived(account: Account, archived: boolean) {
+  try {
+    await api.archiveAccount(account.id, archived);
+    if (archived && selectedAccountId.value === account.id) selectedAccountId.value = null;
+    await loadAccounts();
+  } catch (e) { console.error(e); }
+}
+
 onMounted(async () => {
-  const [accts] = await Promise.all([
-    api.getAccounts(),
-    loadHistory(),
-  ]);
-  accounts.value = accts
-    .filter(a => a.type !== 'investment')
-    .sort((x, y) => uploadOrder(x) - uploadOrder(y));
-  if (accounts.value[0]) selectedAccountId.value = accounts.value[0].id;
+  await Promise.all([loadAccounts(), loadHistory()]);
   loadingHistory.value = false;
 });
 
@@ -254,6 +355,18 @@ const exportTips = [
     bank: 'Discover', icon: 'credit_card', color: '#F59E0B',
     steps: ['Log in at discover.com', 'Go to Manage > Activity', 'Click Download Transactions', 'Choose CSV format'],
   },
+  {
+    bank: 'Capital One', icon: 'account_balance', color: '#D03027',
+    steps: ['Log in at capitalone.com', 'Select the account', 'Click Download Transactions', 'Choose CSV format'],
+  },
+  {
+    bank: 'Chase', icon: 'account_balance', color: '#117ACA',
+    steps: ['Log in at chase.com', 'Choose the account', 'Click the download icon above activity', 'Select CSV & date range'],
+  },
+  {
+    bank: 'American Express', icon: 'credit_card', color: '#2E77BB',
+    steps: ['Log in at americanexpress.com', 'Go to Statements & Activity', 'Click Download Your Transactions', 'Choose CSV format'],
+  },
 ];
 </script>
 
@@ -261,14 +374,31 @@ const exportTips = [
 .bb-upload-page { background-color: #0A0A1B; min-height: 100vh; }
 
 .bb-account-card {
+  position: relative;
   background: #0F1030; border: 1px solid rgba(255,255,255,0.07);
   border-radius: 12px; padding: 16px; cursor: pointer;
   transition: all 0.15s ease; display: flex; flex-direction: column; gap: 6px;
-  &:hover { border-color: rgba(108,78,212,0.3); background: #141440; }
+  &:hover { border-color: rgba(108,78,212,0.3); background: #141440;
+    .bb-account-hide { opacity: 1; } }
   &--active { border-color: #6C4ED4 !important; background: rgba(108,78,212,0.1) !important; }
+}
+.bb-account-hide {
+  position: absolute; top: 6px; right: 6px; color: #6E6E9A !important;
+  opacity: 0; transition: opacity 0.15s ease;
+  &:hover { color: #EF4444 !important; }
 }
 .bb-account-name { font-size: 13px; font-weight: 600; color: #ffffff; }
 .bb-account-type { font-size: 11px; color: #6E6E9A; }
+
+.bb-hidden-accts {
+  background: #0C0C22; border: 1px dashed rgba(255,255,255,0.1); border-radius: 12px; padding: 14px 16px;
+}
+.bb-hidden-title { font-size: 12px; font-weight: 700; letter-spacing: 0.08em; color: #8F8FB5; text-transform: uppercase; }
+.bb-hidden-sub { font-size: 11.5px; color: #6E6E9A; margin: 4px 0 10px; }
+.bb-hidden-list { display: flex; flex-direction: column; gap: 4px; }
+.bb-hidden-item { display: flex; align-items: center; gap: 10px; padding: 6px 0; }
+.bb-hidden-name { font-size: 13px; color: #C6C6E5; font-weight: 600; }
+.bb-hidden-inst { font-size: 11px; color: #6E6E9A; flex: 1; }
 
 .bb-historical-row {
   display: flex; align-items: flex-start; gap: 12px;
@@ -317,4 +447,16 @@ const exportTips = [
 .bb-history-name { font-size: 13px; font-weight: 500; color: #ffffff; }
 .bb-history-meta { font-size: 11px; color: #6E6E9A; margin-top: 2px; }
 .bb-history-date { font-size: 11px; color: #4D4D70; white-space: nowrap; }
+.bb-history-delete {
+  color: #4D4D70;
+  &:hover { color: #EF4444; }
+}
+
+.bb-undo-dialog {
+  background: #0F1030; border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 16px; padding: 28px; width: 92vw; max-width: 420px;
+}
+.bb-undo-title   { font-size: 16px; font-weight: 700; color: #ffffff; margin-bottom: 12px; }
+.bb-undo-text    { font-size: 13px; color: #9090B8; line-height: 1.6; margin-bottom: 20px; strong { color: #ffffff; } }
+.bb-undo-actions { display: flex; justify-content: flex-end; gap: 10px; }
 </style>

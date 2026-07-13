@@ -33,7 +33,23 @@
         class="bb-filter-select"
         @update:model-value="() => { offset = 0; void loadTransactions(); }"
       />
+      <q-select
+        v-model="filterAccount"
+        :options="accountOptions"
+        emit-value map-options
+        dense outlined dark
+        class="bb-filter-select"
+        @update:model-value="() => { offset = 0; void loadTransactions(); }"
+      />
       <q-btn no-caps flat label="Clear filters" size="sm" style="color:#6E6E9A" @click="clearFilters" />
+      <q-btn
+        no-caps flat icon="download" label="Export CSV" size="sm"
+        :loading="exporting" :disable="total === 0"
+        style="color:#8B6FEC"
+        @click="exportCsv"
+      >
+        <q-tooltip>Download the filtered transactions as a CSV file</q-tooltip>
+      </q-btn>
     </div>
 
     <!-- Loading -->
@@ -85,14 +101,23 @@
             <div v-if="tx.merchant" class="bb-tx-desc-small">{{ tx.description }}</div>
           </span>
           <span class="bb-tx-col-cat">
-            <span v-if="tx.category" class="bb-cat-chip" :style="{ background: hex(tx.category_color ?? '#6C4ED4') + '22', color: tx.category_color ?? '#6C4ED4' }">
+            <!-- A real category shows normally; an unknown one (blank OR the
+                 'Unknown' category) shows its direction so you can tell income
+                 from money leaving at a glance, on any account. -->
+            <span v-if="tx.category && tx.category !== 'Unknown'" class="bb-cat-chip" :style="{ background: hex(tx.category_color ?? '#6C4ED4') + '22', color: tx.category_color ?? '#6C4ED4' }">
               {{ tx.category }}
             </span>
-            <span v-else class="bb-cat-chip bb-cat-unknown">Unknown</span>
+            <span v-else class="bb-cat-chip" :class="tx.type === 'credit' ? 'bb-cat-unknown-in' : 'bb-cat-unknown-out'">
+              Unknown · {{ tx.type === 'credit' ? 'in ↓' : 'out ↑' }}
+            </span>
           </span>
           <span class="bb-tx-col-acct bb-tx-acct">{{ tx.account_name }}</span>
           <span class="bb-tx-col-amt" :class="tx.type === 'credit' ? 'bb-amt-credit' : 'bb-amt-debit'">
-            {{ tx.type === 'credit' ? '+' : '-' }}${{ fmtAmount(tx.amount) }}
+            <template v-if="tx.reimbursed_amount > 0">
+              <span class="bb-tx-gross">${{ fmtAmount(tx.amount) }}</span>
+              <span class="bb-tx-net">-${{ fmtAmount(Math.max(0, tx.amount - tx.reimbursed_amount)) }}</span>
+            </template>
+            <template v-else>{{ tx.type === 'credit' ? '+' : '-' }}${{ fmtAmount(tx.amount) }}</template>
           </span>
         </div>
       </template>
@@ -140,9 +165,30 @@
         />
 
         <div class="bb-edit-label">Note (optional)</div>
-        <q-input v-model="editNote" dense outlined dark placeholder="e.g. Sarah's birthday dinner" class="q-mb-lg" />
+        <q-input v-model="editNote" dense outlined dark placeholder="e.g. Sarah's birthday dinner" class="q-mb-md" />
 
-        <div class="bb-edit-actions">
+        <!-- Reimbursements — for expenses only: link money a friend paid you back
+             so this expense shows its true net cost. -->
+        <template v-if="editTx && editTx.type === 'debit'">
+          <div class="bb-edit-label">Reimbursements</div>
+          <div v-if="reimbLoading" class="bb-reimb-empty">Loading…</div>
+          <template v-else>
+            <div v-if="reimbOptions.length === 0" class="bb-reimb-empty">No reimbursements available to link.</div>
+            <div v-else class="bb-reimb-list">
+              <label v-for="r in reimbOptions" :key="r.id" class="bb-reimb-item">
+                <q-checkbox v-model="reimbSelected" :val="r.id" dense color="teal" />
+                <span class="bb-reimb-desc">{{ r.description }}</span>
+                <span class="bb-reimb-amt">+${{ fmtAmount(r.amount) }}</span>
+              </label>
+            </div>
+            <div v-if="reimbSelectedTotal > 0" class="bb-reimb-net">
+              Net after reimbursement: <strong>${{ fmtAmount(reimbNet) }}</strong>
+              <span class="bb-reimb-sub">(${{ fmtAmount(editTx.amount) }} − ${{ fmtAmount(reimbSelectedTotal) }})</span>
+            </div>
+          </template>
+        </template>
+
+        <div class="bb-edit-actions q-mt-lg">
           <q-btn flat no-caps label="Cancel" style="color:#6E6E9A" v-close-popup />
           <q-btn no-caps unelevated label="Save" :loading="saving"
             style="background:linear-gradient(135deg,#6C4ED4,#E040FB);color:#fff;border-radius:8px;padding:6px 20px"
@@ -157,15 +203,18 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
 import { useRoute } from 'vue-router';
-import { api, type Transaction, type Category, type TransactionMonth } from 'src/services/api';
+import { useQuasar } from 'quasar';
+import { api, type Transaction, type Category, type TransactionMonth, type Account, type ReimbursementOption } from 'src/services/api';
 
 const route = useRoute();
+const $q = useQuasar();
 
 const PAGE_SIZE = 50;
 
 const transactions   = ref<Transaction[]>([]);
 const categories     = ref<Category[]>([]);
 const months         = ref<TransactionMonth[]>([]);
+const accounts       = ref<Account[]>([]);
 const loading        = ref(true);
 const loadError      = ref('');
 const total          = ref(0);
@@ -173,6 +222,8 @@ const offset         = ref(0);
 const search         = ref('');
 const filterCategory = ref('All Categories');
 const filterMonth    = ref(''); // '' = all months, otherwise 'YYYY-MM'
+const filterAccount  = ref(''); // '' = all accounts, otherwise the account id as a string
+const exporting      = ref(false);
 
 let searchTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -187,6 +238,11 @@ const categoryOptions = computed(() => categories.value.map(c => ({ id: c.id, na
 const monthOptions = computed(() => [
   { label: 'All Months', value: '' },
   ...months.value.map(m => ({ label: `${monthLabel(m.monthKey)} (${m.count})`, value: m.monthKey })),
+]);
+
+const accountOptions = computed(() => [
+  { label: 'All Accounts', value: '' },
+  ...accounts.value.map(a => ({ label: `${a.name} · ${a.institution}`, value: String(a.id) })),
 ]);
 
 // The API returns dates as calendar dates serialized at UTC midnight
@@ -211,6 +267,16 @@ const editNote     = ref('');
 const editDate     = ref('');
 const saving       = ref(false);
 
+// Reimbursement linking (expenses only): reimbOptions = linked + available,
+// with the linked ones pre-selected.
+const reimbLoading  = ref(false);
+const reimbOptions  = ref<ReimbursementOption[]>([]);
+const reimbSelected = ref<number[]>([]);
+const reimbSelectedTotal = computed(() =>
+  reimbOptions.value.filter(r => reimbSelected.value.includes(r.id)).reduce((s, r) => s + r.amount, 0),
+);
+const reimbNet = computed(() => Math.max(0, (editTx.value?.amount ?? 0) - reimbSelectedTotal.value));
+
 function hex(color: string) { return color; }
 
 function fmtDate(iso: string) {
@@ -223,20 +289,27 @@ function fmtAmount(n: number) {
   return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+// The filters currently in effect, as query params understood by both the
+// list and the CSV-export endpoints (paging is added separately).
+function currentFilterParams(): Record<string, string> {
+  const params: Record<string, string> = {};
+  if (search.value) params.search = search.value;
+  if (filterCategory.value !== 'All Categories') params.category = filterCategory.value;
+  if (filterAccount.value) params.account = filterAccount.value;
+  if (filterMonth.value) {
+    const [y, m] = filterMonth.value.split('-').map(Number);
+    const lastDay = new Date(y ?? 0, m ?? 1, 0).getDate(); // day 0 of next month = last day of this one
+    params.startDate = `${filterMonth.value}-01`;
+    params.endDate = `${filterMonth.value}-${String(lastDay).padStart(2, '0')}`;
+  }
+  return params;
+}
+
 async function loadTransactions() {
   loading.value = true;
   loadError.value = '';
   try {
-    const params: Record<string, string> = { limit: String(PAGE_SIZE), offset: String(offset.value) };
-    if (search.value) params.search = search.value;
-    if (filterCategory.value !== 'All Categories') params.category = filterCategory.value;
-    if (filterMonth.value) {
-      const [y, m] = filterMonth.value.split('-').map(Number);
-      const lastDay = new Date(y ?? 0, m ?? 1, 0).getDate(); // day 0 of next month = last day of this one
-      params.startDate = `${filterMonth.value}-01`;
-      params.endDate = `${filterMonth.value}-${String(lastDay).padStart(2, '0')}`;
-    }
-
+    const params = { ...currentFilterParams(), limit: String(PAGE_SIZE), offset: String(offset.value) };
     const res = await api.getTransactions(params);
     transactions.value = res.transactions;
     total.value        = res.total;
@@ -245,6 +318,24 @@ async function loadTransactions() {
     console.error(e);
   } finally {
     loading.value = false;
+  }
+}
+
+// Download everything matching the current filters (not just this page) as CSV.
+async function exportCsv() {
+  exporting.value = true;
+  try {
+    const blob = await api.exportTransactionsCsv(currentFilterParams());
+    const url  = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `breadbank-transactions-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    $q.notify({ type: 'negative', message: e instanceof Error ? e.message : 'Failed to export transactions' });
+  } finally {
+    exporting.value = false;
   }
 }
 
@@ -278,6 +369,7 @@ function clearFilters() {
   search.value         = '';
   filterCategory.value = 'All Categories';
   filterMonth.value    = '';
+  filterAccount.value  = '';
   offset.value         = 0;
   void loadTransactions();
 }
@@ -288,6 +380,21 @@ function openEdit(tx: Transaction) {
   editNote.value     = tx.notes ?? '';
   editDate.value     = tx.date.slice(0, 10); // 'YYYY-MM-DD' for the date input
   editOpen.value     = true;
+
+  // For an expense, load the reimbursements it can be paired with (already-linked
+  // ones pre-checked). Skipped for credits — those aren't expenses.
+  reimbOptions.value = [];
+  reimbSelected.value = [];
+  if (tx.type === 'debit') {
+    reimbLoading.value = true;
+    void api.getReimbursements(tx.id)
+      .then(({ linked, available }) => {
+        reimbOptions.value = [...linked, ...available];
+        reimbSelected.value = linked.map(l => l.id);
+      })
+      .catch((e) => console.error(e))
+      .finally(() => { reimbLoading.value = false; });
+  }
 }
 
 async function saveEdit() {
@@ -299,6 +406,11 @@ async function saveEdit() {
     if (editNote.value) updates.notes = editNote.value;
     if (editDate.value && editDate.value !== editTx.value.date.slice(0, 10)) updates.date = editDate.value;
     await api.updateTransaction(editTx.value.id, updates);
+    // Persist reimbursement links (expenses only). Sends the full selected set so
+    // the backend reconciles adds and removals.
+    if (editTx.value.type === 'debit') {
+      await api.setReimbursements(editTx.value.id, [...reimbSelected.value]);
+    }
     editOpen.value = false;
     await loadTransactions();
   } catch (e) {
@@ -314,9 +426,12 @@ onMounted(async () => {
     filterCategory.value = route.query.category;
   }
   try {
-    const [, cats, mos] = await Promise.all([loadTransactions(), api.getCategories(), api.getTransactionMonths()]);
+    const [, cats, mos, accts] = await Promise.all([
+      loadTransactions(), api.getCategories(), api.getTransactionMonths(), api.getAccounts(),
+    ]);
     categories.value = cats;
     months.value = mos;
+    accounts.value = accts;
   } catch (e) {
     // loadTransactions handles its own error state; this catches a failed
     // category fetch so it isn't silently swallowed.
@@ -396,9 +511,30 @@ onMounted(async () => {
   max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .bb-cat-unknown { background: rgba(110,110,154,0.15) !important; color: #6E6E9A !important; }
+/* Unknown category, direction-tagged: green when money came in, red when it left. */
+.bb-cat-unknown-in  { background: rgba(34,197,94,0.15) !important;  color: #22C55E !important; }
+.bb-cat-unknown-out { background: rgba(239,68,68,0.15) !important;  color: #EF4444 !important; }
 
+/* Money coming IN is green, money going OUT is red — at a glance, regardless of
+   category (including Unknown). */
 .bb-amt-credit { color: #22C55E !important; }
-.bb-amt-debit  { color: #ffffff; }
+.bb-amt-debit  { color: #EF4444 !important; }
+
+/* Row: struck-through gross + green net when an expense is (partly) reimbursed */
+.bb-tx-gross { color: #6E6E9A; text-decoration: line-through; font-size: 12px; margin-right: 6px; }
+.bb-tx-net   { color: #22C55E; font-weight: 600; }
+
+/* Reimbursement linker inside the edit dialog */
+.bb-reimb-empty { color: #6E6E9A; font-size: 12px; margin-bottom: 12px; }
+.bb-reimb-list  { display: flex; flex-direction: column; gap: 2px; margin-bottom: 10px;
+                  max-height: 160px; overflow-y: auto; }
+.bb-reimb-item  { display: flex; align-items: center; gap: 8px; cursor: pointer;
+                  padding: 2px 0; font-size: 12px; color: #C6C6E5; }
+.bb-reimb-desc  { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bb-reimb-amt   { color: #22C55E; font-weight: 600; }
+.bb-reimb-net   { font-size: 13px; color: #E2E2FF; margin-bottom: 8px; }
+.bb-reimb-net strong { color: #14B8A6; }
+.bb-reimb-sub   { color: #6E6E9A; font-size: 11px; margin-left: 6px; }
 
 .bb-pagination {
   display: flex; align-items: center; justify-content: center; gap: 16px;

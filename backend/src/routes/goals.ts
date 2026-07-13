@@ -17,9 +17,10 @@ function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
-// This month's net savings (income - spending), the SAME figure the dashboard
-// shows. This is the "new money" available to allocate each month.
-async function netSavingsThisMonth(userId: number): Promise<number> {
+// This month's income and net savings (income - spending) — the SAME figures the
+// dashboard shows. Income drives the "pay yourself first" reserve target; net is
+// the new money actually available to allocate.
+async function monthTotals(userId: number): Promise<{ income: number; net: number }> {
   const now = new Date();
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
   const res = await getPool().request()
@@ -31,7 +32,8 @@ async function netSavingsThisMonth(userId: number): Promise<number> {
       WHERE t.user_id = @userId AND t.date >= @start
     `);
   const r = res.recordset[0] as { spending: number | null; income: number | null } | undefined;
-  return (Number(r?.income) || 0) - (Number(r?.spending) || 0);
+  const income = Number(r?.income) || 0;
+  return { income, net: income - (Number(r?.spending) || 0) };
 }
 
 // Ensure the user's single built-in Savings (reserve) bucket exists and return its id.
@@ -53,8 +55,7 @@ async function ensureReserveGoal(userId: number): Promise<number> {
 // Per-month allocation snapshot used by GET / suggest / apply so they all agree.
 async function monthlyState(userId: number, reserveId: number) {
   const mk = currentMonthKey();
-  const net = await netSavingsThisMonth(userId);
-  const positiveNet = Math.max(0, net);
+  const { income, net } = await monthTotals(userId);
 
   const res = await getPool().request()
     .input('userId', sql.Int, userId)
@@ -69,13 +70,17 @@ async function monthlyState(userId: number, reserveId: number) {
     `);
   const row = res.recordset[0] as { reserveThisMonth: number; othersThisMonth: number };
 
-  const reserveTarget = round2(positiveNet * RESERVE_PCT);
+  // "Pay yourself first" reserve target = 20% of this month's INCOME (not of the
+  // leftover), so the recommendation is a straight 20% of what you earned.
+  const reserveTarget = round2(Math.max(0, income) * RESERVE_PCT);
   const reserveThisMonth = Number(row.reserveThisMonth);
   const othersThisMonth = Number(row.othersThisMonth);
-  // Only 80% of the leftover is ever offered to purchase goals.
-  const available = Math.max(0, round2(positiveNet * (1 - RESERVE_PCT) - othersThisMonth));
+  // What's left of this month's net savings for purchase goals, after setting the
+  // reserve aside and whatever's already been allocated.
+  const available = Math.max(0, round2(net - reserveTarget - othersThisMonth));
 
   return {
+    income,
     net,
     reserveTarget,
     reserveThisMonth,

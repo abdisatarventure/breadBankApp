@@ -46,8 +46,13 @@ router.post('/', storage.single('file'), async (req: AuthRequest, res: Response)
       return;
     }
 
-    // 1. Parse
-    const parsed = parseCSV(csvContent, accountType);
+    // 1. Parse. The owner's registered name lets the parser file Zelle moves
+    // between their own banks as transfers instead of income/reimbursement.
+    const ownerRow = await pool.request()
+      .input('id', sql.Int, userId)
+      .query('SELECT name FROM users WHERE id = @id');
+    const ownerName = (ownerRow.recordset[0] as { name: string | null } | undefined)?.name ?? null;
+    const parsed = parseCSV(csvContent, accountType, ownerName);
     if (parsed.length === 0) {
       res.status(400).json({ error: 'No valid transactions found in CSV' });
       return;
@@ -201,6 +206,43 @@ router.post('/', storage.single('file'), async (req: AuthRequest, res: Response)
   } catch (err) {
     console.error('Upload error:', err);
     res.status(500).json({ error: 'Failed to process CSV' });
+  }
+});
+
+// DELETE /api/upload/:id — undo an import. Removes every transaction that came
+// in with that upload (wrong file, wrong account, forgot the historical
+// toggle…) plus the history row itself. The CSV can simply be re-uploaded.
+router.delete('/:id', async (req: AuthRequest, res: Response) => {
+  try {
+    const id = parseInt(req.params.id ?? '0');
+    if (!Number.isInteger(id) || id < 1) {
+      res.status(400).json({ error: 'A valid upload id is required' });
+      return;
+    }
+
+    const pool = getPool();
+    const owned = await pool.request()
+      .input('id',     sql.Int, id)
+      .input('userId', sql.Int, req.userId)
+      .query('SELECT id FROM uploads WHERE id = @id AND user_id = @userId');
+    if (owned.recordset.length === 0) {
+      res.status(404).json({ error: 'Upload not found' });
+      return;
+    }
+
+    const delTx = await pool.request()
+      .input('id',     sql.Int, id)
+      .input('userId', sql.Int, req.userId)
+      .query('DELETE FROM transactions WHERE upload_id = @id AND user_id = @userId');
+    await pool.request()
+      .input('id',     sql.Int, id)
+      .input('userId', sql.Int, req.userId)
+      .query('DELETE FROM uploads WHERE id = @id AND user_id = @userId');
+
+    res.json({ success: true, removedTransactions: delTx.rowsAffected[0] ?? 0 });
+  } catch (err) {
+    console.error('Upload undo error:', err);
+    res.status(500).json({ error: 'Failed to undo upload' });
   }
 });
 

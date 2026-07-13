@@ -9,6 +9,13 @@
       </div>
       <div class="row items-center q-gutter-sm">
         <q-btn
+          no-caps flat dense icon="explore" label="Take a tour"
+          style="color:#8B6FEC"
+          @click="startTour"
+        >
+          <q-tooltip>A quick guided walkthrough</q-tooltip>
+        </q-btn>
+        <q-btn
           flat round dense
           :icon="hideAmounts ? 'visibility_off' : 'visibility'"
           style="color:#8B6FEC"
@@ -137,18 +144,32 @@
               TOTAL DEBT
             </div>
             <div class="bb-stat-val">{{ money(totalDebt) }}</div>
-            <div class="bb-stat-row bb-debt-breakdown">
-              <span v-for="d in debtBreakdown" :key="d.name" class="bb-debt-item">
-                {{ d.name }} <strong>{{ money(d.owed) }}</strong>
-              </span>
-              <span v-if="debtBreakdown.length === 0" class="bb-stat-cmp">no credit cards</span>
+            <!-- Per-card debt + utilization vs limit (click a card to set/edit its limit) -->
+            <div class="bb-debt-util">
+              <div v-for="c in creditCards" :key="c.id" class="bb-du-row" @click="editLimit(c)">
+                <q-tooltip>Click to set / edit this card's credit limit</q-tooltip>
+                <div class="bb-du-line1">
+                  <span class="bb-du-name">{{ c.name }}</span>
+                  <span v-if="c.hasLimit" class="bb-du-pct" :class="c.statusClass">{{ c.utilization.toFixed(0) }}%</span>
+                  <span v-else class="bb-du-set">set limit</span>
+                </div>
+                <div v-if="c.hasLimit" class="bb-du-bar-wrap">
+                  <div class="bb-du-bar" :class="c.statusClass" :style="{ width: Math.min(c.utilization, 100) + '%' }"></div>
+                  <div class="bb-du-mark"></div>
+                </div>
+                <div class="bb-du-amt">
+                  {{ money(c.owed) }}<template v-if="c.hasLimit"> / {{ money(c.limit ?? 0) }}</template>
+                </div>
+                <div v-if="c.warning" class="bb-du-warn" :class="c.statusClass">{{ c.warning }}</div>
+              </div>
+              <span v-if="creditCards.length === 0" class="bb-stat-cmp">no credit-card debt</span>
             </div>
           </div>
         </div>
 
         <!-- Monthly Spending -->
         <div class="col-6 col-md-3">
-          <div class="bb-stat bb-stat--gradient">
+          <div class="bb-stat bb-stat--gradient" data-tour="spending">
             <div class="bb-stat-lbl">
               <span class="bb-dot" style="background:rgba(255,255,255,0.6)"></span>
               MONTHLY SPENDING
@@ -159,11 +180,6 @@
                 {{ spendingChangePct }}
               </span>
               <span class="bb-stat-cmp">vs last month</span>
-            </div>
-            <!-- Refunds are excluded from income and already netted out of the
-                 spending figure above; shown here just so they're visible. -->
-            <div v-if="(dash?.refundsYtd ?? 0) > 0" class="bb-stat-cmp bb-refund-note">
-              ↩ {{ money(dash?.refundsThisMonth ?? 0) }} refunded this month · {{ money(dash?.refundsYtd ?? 0) }} YTD
             </div>
           </div>
         </div>
@@ -184,7 +200,7 @@
 
         <!-- Net Savings -->
         <div class="col-6 col-md-3">
-          <div class="bb-stat">
+          <div class="bb-stat" data-tour="savings">
             <div class="bb-stat-lbl">
               <span class="bb-dot" :style="`background:${netSavingsNegative ? '#EF4444' : '#22C55E'}`"></span>
               NET SAVINGS
@@ -203,7 +219,7 @@
               />
             </div>
             <router-link to="/app/goals" class="bb-unallocated">
-              {{ money(dash?.unallocatedSavings ?? 0) }} unallocated →
+              {{ money(dash?.savedThisMonth ?? 0) }} saved this month →
             </router-link>
           </div>
         </div>
@@ -246,7 +262,7 @@
 
         <!-- Net Worth -->
         <div class="col-6 col-md-3">
-          <div class="bb-stat">
+          <div class="bb-stat" data-tour="net-worth">
             <div class="bb-stat-lbl">
               <span class="bb-dot" style="background:#A855F7"></span>
               NET WORTH
@@ -288,7 +304,7 @@
       </div>
 
       <!-- Charts -->
-      <div v-else class="row q-col-gutter-md">
+      <div v-else class="row q-col-gutter-md" data-tour="charts">
 
         <!-- Spending by Category -->
         <div class="col-12 col-md-6">
@@ -325,15 +341,40 @@
       </div>
 
     </template>
+
+    <TourGuide v-model="tourActive" :steps="tourSteps" />
   </q-page>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
+import { useQuasar } from 'quasar';
 import VueApexCharts from 'vue3-apexcharts';
 import type { ApexOptions } from 'apexcharts';
 import { api, type DashboardData, type Account } from 'src/services/api';
+import TourGuide, { type TourStep } from 'src/components/TourGuide.vue';
 
+const $q = useQuasar();
+
+// ── Guided tour (auto-runs for the demo account, replayable via the button) ──
+const tourActive = ref(false);
+const tourSteps: TourStep[] = [
+  { target: null, title: 'Welcome to BreadBank 👋',
+    body: "This is a live demo with fake data. Here's a 60-second tour of how it all works — you can skip anytime." },
+  { target: '[data-tour="net-worth"]', title: 'Net Worth',
+    body: 'Your bottom line at a glance: cash on hand (checking + savings) minus credit-card debt.' },
+  { target: '[data-tour="spending"]', title: 'Monthly Spending',
+    body: 'What you actually spent this month. Card payments, transfers and reimbursements are excluded automatically, so this is your true spending — not money just moving around.' },
+  { target: '[data-tour="savings"]', title: 'Net Savings',
+    body: 'Income minus spending, with your savings rate — and how much you moved into savings this month.' },
+  { target: '[data-tour="charts"]', title: 'Where your money goes',
+    body: 'See spending broken down by category and how it trends month over month.' },
+  { target: '[data-tour="nav"]', title: 'Explore everything',
+    body: 'Jump into Transactions (categorize charges & link reimbursements to see true cost), Reports, Budgets, Savings Goals, Bills, and upload statements — all from here.' },
+  { target: null, title: "You're all set 🎉",
+    body: "That's the tour! Click around freely — it's all demo data, so nothing here is real. Enjoy exploring BreadBank." },
+];
+function startTour() { tourActive.value = true; }
 const now = new Date();
 const currentMonth = now.toLocaleString('default', { month: 'long', year: 'numeric' });
 
@@ -385,20 +426,54 @@ const owedFor = (a: Account) =>
   a.current_balance != null
     ? Math.max(0, a.current_balance)
     : Math.max(0, -(a.balance ?? 0));
-const debtBreakdown = computed(() =>
+// The credit cards you actually owe on (owed > 0), each with utilization vs its
+// limit and a warning near the 30% guideline (amber 25%+, red 30%+). Shown inside
+// the Total Debt tile. Paid-off ($0) and archived cards are hidden.
+const creditCards = computed(() =>
   accounts.value
-    .filter(a => a.type === 'credit')
-    .map(a => ({ name: a.name, owed: owedFor(a) }))
-    // Hide cards carrying no debt (e.g. the closed Apple Card at $0.00) so the
-    // breakdown only lists cards you actually owe on. Total Debt is unaffected.
-    .filter(d => d.owed > 0),
+    .filter(a => a.type === 'credit' && !a.is_archived)
+    .map(a => {
+      const owed = owedFor(a);
+      const limit = a.credit_limit;
+      let hasLimit = false;
+      let utilization = 0;
+      let statusClass = 'is-good';
+      let warning = '';
+      if (limit != null && limit > 0) {
+        hasLimit = true;
+        utilization = (owed / limit) * 100;
+        const thirty = limit * 0.30;
+        if (utilization >= 30) {
+          statusClass = 'is-over';
+          warning = `Over 30% — pay down ${money(owed - thirty)} to get back under.`;
+        } else if (utilization >= 25) {
+          statusClass = 'is-near';
+          warning = `Approaching 30% — ${money(thirty - owed)} of room left.`;
+        }
+      }
+      return { id: a.id, name: a.name, owed, limit, hasLimit, utilization, statusClass, warning };
+    })
+    .filter(c => c.owed > 0),
 );
-const totalDebt = computed(() => debtBreakdown.value.reduce((s, d) => s + d.owed, 0));
+const totalDebt = computed(() => creditCards.value.reduce((s, c) => s + c.owed, 0));
+
+function editLimit(c: { id: number; name: string; limit: number | null }) {
+  $q.dialog({
+    title: `Credit limit — ${c.name}`,
+    message: "Enter this card's total credit limit (leave blank to clear).",
+    prompt: { model: c.limit != null ? String(c.limit) : '', type: 'number', outlined: true, isValid: (v: string) => v === '' || Number(v) >= 0 },
+    cancel: true,
+    dark: true,
+  }).onOk((val: string) => {
+    const limit = val === '' || val == null ? null : Number(val);
+    void api.setCreditLimit(c.id, limit).then(() => load()).catch((e) => console.error(e));
+  });
+}
 
 // Checking / savings balances. Match on the account `type` first, falling back
 // to the account name, since deposit accounts aren't always typed consistently.
 const matchAccounts = (re: RegExp) =>
-  accounts.value.filter(a => re.test(a.type ?? '') || re.test(a.name ?? ''));
+  accounts.value.filter(a => !a.is_archived && (re.test(a.type ?? '') || re.test(a.name ?? '')));
 
 // The accounts that actually make up a balance card. If any account in the
 // group is linked to Plaid (real bank balance), trust only those and ignore
@@ -493,10 +568,18 @@ async function load() {
 
 onMounted(async () => {
   await load();
-  // Auto-sync once per login: the login flow sets this flag, we consume it
-  // here so a fresh pull from Plaid happens without the user clicking Sync.
-  if (sessionStorage.getItem('bb_sync_on_login')) {
-    sessionStorage.removeItem('bb_sync_on_login');
+  // First visit after a demo login: auto-launch the guided tour (once). The flag
+  // is set by the login page's "Try the demo" flow.
+  if (localStorage.getItem('bb_show_tour')) {
+    localStorage.removeItem('bb_show_tour');
+    setTimeout(startTour, 400); // let the tiles finish rendering first
+  }
+  // Auto-sync once per browser session (whether just logged in or returning to
+  // the app) so we pull fresh data AND detect any bank that has disconnected —
+  // syncBank() raises a reconnect popup for those.
+  sessionStorage.removeItem('bb_sync_on_login'); // legacy flag, superseded below
+  if (!sessionStorage.getItem('bb_synced_session')) {
+    sessionStorage.setItem('bb_synced_session', '1');
     await syncBank();
   }
 });
@@ -556,13 +639,33 @@ async function syncBank() {
   bankError.value = '';
   syncing.value = true;
   try {
-    await api.syncPlaid();
+    const result = await api.syncPlaid();
     await load();
+    if (result.failed?.length) notifyDisconnected(result.failed);
   } catch (e) {
     bankError.value = e instanceof Error ? e.message : 'Failed to sync';
   } finally {
     syncing.value = false;
   }
+}
+
+// A bank whose Plaid connection has dropped (e.g. NO_ACCOUNTS / login required)
+// won't pull new transactions until it's reconnected — tell the user with a
+// sticky popup that offers to reconnect right away.
+function notifyDisconnected(failed: { institution: string; reason: string }[]) {
+  const names = [...new Set(failed.map(f => f.institution))].join(', ');
+  const plural = failed.length > 1;
+  $q.notify({
+    type: 'negative',
+    icon: 'link_off',
+    timeout: 0, // sticky — stays until dismissed
+    multiLine: true,
+    message: `${names} ${plural ? 'have' : 'has'} disconnected. New transactions won't sync until you reconnect ${plural ? 'them' : 'it'}.`,
+    actions: [
+      { label: 'Reconnect', color: 'white', handler: () => { void connectBank(); } },
+      { label: 'Dismiss', color: 'white' },
+    ],
+  });
 }
 
 // ── Charts ─────────────────────────────────────────────────
@@ -631,6 +734,28 @@ const categoryOpts = computed<ApexOptions>(() => ({
 
 <style lang="scss">
 .bb-dash { background-color: #0A0A1B; min-height: 100vh; }
+
+/* ── Per-card debt + utilization inside the Total Debt tile ──── */
+.bb-debt-util { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+.bb-du-row { cursor: pointer; border-radius: 8px; padding: 4px; margin: -4px; transition: background 0.15s ease; }
+.bb-du-row:hover { background: rgba(255,255,255,0.04); }
+.bb-du-line1 { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.bb-du-name { font-size: 12px; font-weight: 600; color: #E2E2FF; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bb-du-pct { font-size: 13px; font-weight: 700; flex-shrink: 0; }
+.bb-du-pct.is-good { color: #22C55E; }
+.bb-du-pct.is-near { color: #F59E0B; }
+.bb-du-pct.is-over { color: #EF4444; }
+.bb-du-set { font-size: 11px; font-weight: 600; color: #8B6FEC; flex-shrink: 0; }
+.bb-du-bar-wrap { position: relative; height: 6px; background: rgba(255,255,255,0.08); border-radius: 999px; margin: 5px 0 3px; }
+.bb-du-bar { height: 100%; border-radius: 999px; transition: width 0.3s ease; }
+.bb-du-bar.is-good { background: #22C55E; }
+.bb-du-bar.is-near { background: #F59E0B; }
+.bb-du-bar.is-over { background: #EF4444; }
+.bb-du-mark { position: absolute; top: -2px; bottom: -2px; left: 30%; width: 2px; background: rgba(255,255,255,0.4); }
+.bb-du-amt { font-size: 11px; color: #8F8FB5; font-variant-numeric: tabular-nums; }
+.bb-du-warn { font-size: 10.5px; margin-top: 2px; line-height: 1.35; }
+.bb-du-warn.is-near { color: #F59E0B; }
+.bb-du-warn.is-over { color: #EF4444; }
 
 /* Refund note on the (dark gradient) Monthly Spending tile — brighter than the
    default muted caption so it reads against the purple background. */

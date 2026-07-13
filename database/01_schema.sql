@@ -202,6 +202,15 @@ IF NOT EXISTS (SELECT * FROM sys.columns WHERE Name='plaid_account_id' AND Objec
     ALTER TABLE accounts ADD plaid_account_id NVARCHAR(100) NULL;
 IF NOT EXISTS (SELECT * FROM sys.columns WHERE Name='current_balance' AND Object_ID=Object_ID('accounts'))
     ALTER TABLE accounts ADD current_balance DECIMAL(14,2) NULL;
+-- Optional user-entered credit limit per card, for utilization tracking (the
+-- 30%-of-limit warning on the dashboard).
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE Name='credit_limit' AND Object_ID=Object_ID('accounts'))
+    ALTER TABLE accounts ADD credit_limit DECIMAL(14,2) NULL;
+-- Archived (hidden) accounts: their transactions are kept for reports/history,
+-- but the account is hidden from uploads, credit utilization, and current
+-- balances/debt/net worth. A soft "delete" that never loses data.
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE Name='is_archived' AND Object_ID=Object_ID('accounts'))
+    ALTER TABLE accounts ADD is_archived BIT NOT NULL DEFAULT 0;
 IF NOT EXISTS (SELECT * FROM sys.columns WHERE Name='plaid_transaction_id' AND Object_ID=Object_ID('transactions'))
     ALTER TABLE transactions ADD plaid_transaction_id NVARCHAR(100) NULL;
 IF NOT EXISTS (SELECT * FROM sys.columns WHERE Name='date_overridden' AND Object_ID=Object_ID('transactions'))
@@ -210,6 +219,14 @@ IF NOT EXISTS (SELECT * FROM sys.columns WHERE Name='date_overridden' AND Object
 -- dashboard's current account balances so a prior-year import doesn't move them.
 IF NOT EXISTS (SELECT * FROM sys.columns WHERE Name='is_historical' AND Object_ID=Object_ID('transactions'))
     ALTER TABLE transactions ADD is_historical BIT NOT NULL DEFAULT 0;
+-- Links a reimbursement (a credit) to the specific expense it offsets, so a
+-- shared cost shows its true net (e.g. rent minus a roommate's Zelle). The
+-- linked reimbursement is also moved into the expense's category so category
+-- and report totals net out too.
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE Name='reimburses_transaction_id' AND Object_ID=Object_ID('transactions'))
+    ALTER TABLE transactions ADD reimburses_transaction_id INT NULL;
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name='idx_tx_reimburses')
+    CREATE INDEX idx_tx_reimburses ON transactions(reimburses_transaction_id);
 -- Self-service password reset columns (safe to add to an existing users table).
 IF NOT EXISTS (SELECT * FROM sys.columns WHERE Name='security_question' AND Object_ID=Object_ID('users'))
     ALTER TABLE users ADD security_question NVARCHAR(300) NULL;

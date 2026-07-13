@@ -18,7 +18,7 @@
 
       <!-- General nav -->
       <div class="bb-section-label">General</div>
-      <q-list class="bb-nav">
+      <q-list class="bb-nav" data-tour="nav">
         <q-item
           v-for="item in generalNav"
           :key="item.path"

@@ -23,7 +23,7 @@ router.get('/', async (req: AuthRequest, res: Response) => {
 
     const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
-    const [currentMo, lastMo, categories, trend, topMerchants, parking, allocated, anomalyRows, refunds] = await Promise.all([
+    const [currentMo, lastMo, categories, trend, topMerchants, parking, allocated, anomalyRows, refunds, savingsCatRes] = await Promise.all([
       pool.request()
         .input('userId', sql.Int, userId)
         .input('start', sql.Date, startOfMonth)
@@ -126,18 +126,35 @@ router.get('/', async (req: AuthRequest, res: Response) => {
           GROUP BY c.name, c.color, c.icon
         `),
 
-      // Refunds tracked in their own 'Refund' category (excluded from income,
-      // netted out of spending) — surfaced so they're visible, not just hidden.
+      // Money-back that reduced spending (never income): merchant/tax Refunds and
+      // person-to-person Reimbursements. Surfaced so the spending reduction is
+      // visible instead of silently baked in.
       pool.request()
         .input('userId', sql.Int, userId)
         .input('monthStart', sql.Date, startOfMonth)
         .input('yearStart', sql.Date, startOfYear)
         .query(`
           SELECT
-            ISNULL(SUM(CASE WHEN t.date >= @monthStart THEN t.amount ELSE 0 END), 0) AS monthRefunds,
-            ISNULL(SUM(t.amount), 0) AS ytdRefunds
+            ISNULL(SUM(CASE WHEN c.name='Refund'        AND t.type='credit' AND t.date >= @monthStart THEN t.amount ELSE 0 END), 0) AS monthRefunds,
+            ISNULL(SUM(CASE WHEN c.name='Refund'        AND t.type='credit' THEN t.amount ELSE 0 END), 0)                          AS ytdRefunds,
+            ISNULL(SUM(CASE WHEN c.name='Reimbursement' AND t.type='credit' AND t.date >= @monthStart THEN t.amount ELSE 0 END), 0) AS monthReimb,
+            ISNULL(SUM(CASE WHEN c.name='Reimbursement' AND t.type='credit' THEN t.amount ELSE 0 END), 0)                          AS ytdReimb,
+            ISNULL(SUM(CASE WHEN c.name='Credit Card Payment' AND t.type='debit' AND t.date >= @monthStart THEN t.amount ELSE 0 END), 0) AS monthCardPmt,
+            ISNULL(SUM(CASE WHEN c.name='Credit Card Payment' AND t.type='debit' THEN t.amount ELSE 0 END), 0)                          AS ytdCardPmt
           FROM transactions t JOIN categories c ON c.id = t.category_id
-          WHERE t.user_id = @userId AND c.name = 'Refund' AND t.type = 'credit' AND t.date >= @yearStart
+          WHERE t.user_id = @userId AND c.name IN ('Refund','Reimbursement','Credit Card Payment') AND t.date >= @yearStart
+        `),
+
+      // How much was moved into savings THIS MONTH, net of any withdrawals back
+      // out — the 'Savings' category. Drives the dashboard's "saved this month"
+      // figure in place of the old "unallocated" hint.
+      pool.request()
+        .input('userId', sql.Int, userId)
+        .input('monthStart', sql.Date, startOfMonth)
+        .query(`
+          SELECT ISNULL(SUM(CASE WHEN t.type='debit' THEN t.amount ELSE -t.amount END), 0) AS savedThisMonth
+          FROM transactions t JOIN categories c ON c.id = t.category_id
+          WHERE t.user_id = @userId AND c.name = 'Savings' AND t.date >= @monthStart
         `),
     ]);
 
@@ -149,7 +166,8 @@ router.get('/', async (req: AuthRequest, res: Response) => {
     const prevSpend   = (lastMo.recordset[0] as { totalSpending: number } | undefined)?.totalSpending ?? 0;
     const park        = parking.recordset[0] as { monthTotal: number; monthTxCount: number; yearTotal: number } | undefined;
     const allocatedToGoals = Number((allocated.recordset[0] as { allocated: number } | undefined)?.allocated ?? 0);
-    const refundRow   = refunds.recordset[0] as { monthRefunds: number; ytdRefunds: number } | undefined;
+    const refundRow   = refunds.recordset[0] as { monthRefunds: number; ytdRefunds: number; monthReimb: number; ytdReimb: number; monthCardPmt: number; ytdCardPmt: number } | undefined;
+    const savedThisMonth = Number((savingsCatRes.recordset[0] as { savedThisMonth: number } | undefined)?.savedThisMonth ?? 0);
 
     // Flag categories where this week's spend is well above the prior 12-week
     // weekly average (and meaningful in dollars), so the dashboard can warn.
@@ -177,8 +195,13 @@ router.get('/', async (req: AuthRequest, res: Response) => {
       // free to put into savings goals (drives the dashboard's "unallocated" hint).
       allocatedToGoals,
       unallocatedSavings:     Math.max(0, savings - allocatedToGoals),
+      savedThisMonth,
       refundsThisMonth:       Number(refundRow?.monthRefunds ?? 0),
       refundsYtd:             Number(refundRow?.ytdRefunds ?? 0),
+      reimbursementsThisMonth: Number(refundRow?.monthReimb ?? 0),
+      reimbursementsYtd:      Number(refundRow?.ytdReimb ?? 0),
+      cardPaymentsThisMonth:  Number(refundRow?.monthCardPmt ?? 0),
+      cardPaymentsYtd:        Number(refundRow?.ytdCardPmt ?? 0),
       previousMonthSpending:  prevSpend,
       categoryBreakdown:      categories.recordset,
       monthlyTrend:           trend.recordset,

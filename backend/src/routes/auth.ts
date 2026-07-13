@@ -9,16 +9,17 @@ import type { ConnectionPool } from 'mssql';
 const router = Router();
 const MIN_PASSWORD_LENGTH = 8;
 const BCRYPT_COST = 12;
+// The showcase account the one-click "Demo" login drops anyone into.
+const DEMO_EMAIL = 'test@gmail.com';
 
-// The starter accounts every new user gets their own private copy of. Each user's
-// balances/transactions are scoped to these, so no data is shared between users.
+// The starter accounts every new user gets their own private copy of. Kept
+// GENERIC (no bank branding) so a new user isn't greeted by someone else's
+// bank lineup: the first Plaid link of a matching type adopts + renames the
+// starter, and unused ones can be hidden from the Upload page.
 const DEFAULT_ACCOUNTS: [name: string, type: string, institution: string][] = [
-  ['Checking',      'checking',   'Wells Fargo'],
-  ['Savings',       'savings',    'Wells Fargo'],
-  ['Apple Card',    'credit',     'Apple'],
-  ['Discover Card', 'credit',     'Discover'],
-  ['Robinhood',     'investment', 'Robinhood'],
-  ['Fidelity',      'investment', 'Fidelity'],
+  ['Checking',    'checking', 'My Bank'],
+  ['Savings',     'savings',  'My Bank'],
+  ['Credit Card', 'credit',   'My Card'],
 ];
 
 async function seedDefaultAccounts(pool: ConnectionPool, userId: number): Promise<void> {
@@ -76,10 +77,13 @@ router.post('/register', async (req, res) => {
 
     const passwordHash = await bcrypt.hash(password, BCRYPT_COST);
     const answerHash   = answer ? await bcrypt.hash(normalizeAnswer(answer), BCRYPT_COST) : null;
+    // The live users.name column is NOT NULL; when no display name is given,
+    // fall back to the email's local part rather than failing the insert.
+    const displayName = (typeof name === 'string' && name.trim()) || normalizedEmail.split('@')[0] || 'User';
     const result = await pool.request()
       .input('email', sql.NVarChar(200), normalizedEmail)
       .input('passwordHash', sql.NVarChar(200), passwordHash)
-      .input('name', sql.NVarChar(100), name?.trim() ?? null)
+      .input('name', sql.NVarChar(100), displayName)
       .input('question', sql.NVarChar(300), question || null)
       .input('answerHash', sql.NVarChar(200), answerHash)
       .query(`
@@ -92,6 +96,14 @@ router.post('/register', async (req, res) => {
     await seedDefaultAccounts(pool, user.id);
     res.json({ id: user.id, email: user.email, name: user.name });
   } catch (err) {
+    // Unique-constraint violation on users.email: two simultaneous registrations
+    // slipped past the SELECT check above. Answer like the normal duplicate path
+    // instead of a 500. (2627 = unique constraint, 2601 = unique index)
+    const sqlErrNo = (err as { number?: number }).number;
+    if (sqlErrNo === 2627 || sqlErrNo === 2601) {
+      res.status(409).json({ error: 'Email already exists.' });
+      return;
+    }
     console.error('Auth register error:', err);
     res.status(500).json({ error: 'Failed to register user.' });
   }
@@ -130,6 +142,27 @@ router.post('/login', async (req, res) => {
   } catch (err) {
     console.error('Auth login error:', err);
     res.status(500).json({ error: 'Failed to authenticate user.' });
+  }
+});
+
+// One-click demo login: hands out a token for the single hard-coded showcase
+// account so anyone can explore the app without credentials. It can ONLY ever
+// log into the demo account, never an arbitrary one, so there's no password.
+router.post('/demo', async (_req, res) => {
+  try {
+    const result = await getPool().request()
+      .input('email', sql.NVarChar(200), DEMO_EMAIL)
+      .query('SELECT id, email, name FROM users WHERE email = @email');
+    const user = result.recordset[0] as { id: number; email: string; name: string | null } | undefined;
+    if (!user) {
+      res.status(404).json({ error: 'Demo account is not set up.' });
+      return;
+    }
+    const token = jwt.sign({ userId: user.id, email: user.email }, JWT_SECRET, { expiresIn: JWT_EXPIRES });
+    res.json({ token, user: { id: user.id, email: user.email, name: user.name } });
+  } catch (err) {
+    console.error('Auth demo error:', err);
+    res.status(500).json({ error: 'Failed to start demo session.' });
   }
 });
 

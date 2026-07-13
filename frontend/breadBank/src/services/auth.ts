@@ -73,6 +73,14 @@ export const auth = {
     return response;
   },
 
+  // One-click demo: log into the shared showcase account, no credentials needed.
+  demoLogin: async () => {
+    const response = await request<{ token: string; user: AuthUser }>('/auth/demo', { method: 'POST' });
+    safeStorageSet(STORAGE_TOKEN_KEY, response.token);
+    safeStorageSet(STORAGE_USER_KEY, JSON.stringify(response.user));
+    return response;
+  },
+
   register: async (
     email: string,
     password: string,

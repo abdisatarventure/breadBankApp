@@ -30,6 +30,27 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+// Same auth/401 handling as request(), but returns the raw body as a Blob —
+// used for file downloads like the transactions CSV export.
+async function requestBlob(path: string): Promise<Blob> {
+  const token = auth.getToken();
+  const res = await fetch(`${BASE}${path}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (res.status === 401) {
+    auth.logout();
+    if (typeof window !== 'undefined') {
+      window.location.href = '/#/login';
+    }
+    throw new Error('Your session has expired. Please sign in again.');
+  }
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+    throw new Error((err as { error: string }).error ?? `HTTP ${res.status}`);
+  }
+  return res.blob();
+}
+
 // ── Types ──────────────────────────────────────────────────
 
 export interface DashboardData {
@@ -41,9 +62,18 @@ export interface DashboardData {
   // how much is still free to allocate. Net Savings itself is unaffected.
   allocatedToGoals: number;
   unallocatedSavings: number;
-  // Refunds (own category, excluded from income, netted out of spending).
+  // This month's net moved into the Savings category (deposits − withdrawals).
+  savedThisMonth: number;
+  // Money-back that reduced spending (never income): merchant/tax refunds and
+  // person-to-person reimbursements.
   refundsThisMonth: number;
   refundsYtd: number;
+  reimbursementsThisMonth: number;
+  reimbursementsYtd: number;
+  // Money paid toward credit cards (excluded from spending — the card's
+  // purchases are the real spending).
+  cardPaymentsThisMonth: number;
+  cardPaymentsYtd: number;
   previousMonthSpending: number;
   categoryBreakdown: { category: string; total: number }[];
   monthlyTrend: { month: string; monthKey: string; spending: number; income: number }[];
@@ -135,6 +165,17 @@ export interface Transaction {
   category_color: string | null;
   account_name: string;
   institution: string;
+  // The expense this row (a reimbursement) is attached to, if any.
+  reimburses_transaction_id: number | null;
+  // For an expense: total reimbursed against it (0 if nothing linked).
+  reimbursed_amount: number;
+}
+
+export interface ReimbursementOption {
+  id: number;
+  date: string;
+  description: string;
+  amount: number;
 }
 
 export interface TransactionMonth {
@@ -222,6 +263,11 @@ export interface Account {
   // Real bank balance from Plaid, when the account is linked. Null for
   // CSV-only accounts — fall back to the transaction-derived `balance`.
   current_balance: number | null;
+  // User-entered credit limit (credit cards only), for utilization tracking.
+  credit_limit: number | null;
+  // Archived accounts keep their transactions but are hidden from uploads,
+  // credit utilization, and current balances.
+  is_archived: boolean;
 }
 
 export interface PlaidLinkStatus {
@@ -367,8 +413,18 @@ export const api = {
     return request<{ transactions: Transaction[]; total: number }>(`/transactions${q}`);
   },
   getTransactionMonths: () => request<TransactionMonth[]>('/transactions/months'),
+  exportTransactionsCsv: (params?: Record<string, string>) => {
+    const q = params && Object.keys(params).length ? '?' + new URLSearchParams(params).toString() : '';
+    return requestBlob(`/transactions/export${q}`);
+  },
   updateTransaction: (id: number, body: { categoryId?: number; notes?: string; merchant?: string; date?: string }) =>
     request<{ success: boolean }>(`/transactions/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+  getReimbursements: (id: number) =>
+    request<{ linked: ReimbursementOption[]; available: ReimbursementOption[] }>(`/transactions/${id}/reimbursements`),
+  setReimbursements: (id: number, reimbursementIds: number[]) =>
+    request<{ success: boolean; linked: number }>(`/transactions/${id}/reimbursements`, {
+      method: 'PUT', body: JSON.stringify({ reimbursementIds }),
+    }),
   assignTransactionCategory: (id: number, categoryId: number) =>
     request<{ success: boolean }>(`/transactions/${id}`, { method: 'PUT', body: JSON.stringify({ categoryId }) }),
   bulkCategorize: (ids: number[], categoryId: number) =>
@@ -392,6 +448,8 @@ export const api = {
     return request<UploadResult>('/upload', { method: 'POST', body: form });
   },
   getUploadHistory: () => request<UploadHistory[]>('/upload/history'),
+  deleteUpload: (id: number) =>
+    request<{ success: boolean; removedTransactions: number }>(`/upload/${id}`, { method: 'DELETE' }),
 
   // Categories
   getCategories: () => request<Category[]>('/categories'),
@@ -431,6 +489,14 @@ export const api = {
 
   // Accounts
   getAccounts: () => request<Account[]>('/accounts'),
+  setCreditLimit: (id: number, creditLimit: number | null) =>
+    request<{ success: boolean }>(`/accounts/${id}/credit-limit`, {
+      method: 'PUT', body: JSON.stringify({ creditLimit }),
+    }),
+  archiveAccount: (id: number, archived: boolean) =>
+    request<{ success: boolean }>(`/accounts/${id}/archive`, {
+      method: 'PUT', body: JSON.stringify({ archived }),
+    }),
 
   // Plaid (bank linking)
   getPlaidStatus: () => request<PlaidLinkStatus>('/plaid/status'),
@@ -442,7 +508,7 @@ export const api = {
       body: JSON.stringify({ public_token: publicToken }),
     }),
   syncPlaid: () =>
-    request<{ success: boolean; banks: number; imported: number }>('/plaid/sync', { method: 'POST' }),
+    request<{ success: boolean; banks: number; imported: number; failed: { institution: string; reason: string }[] }>('/plaid/sync', { method: 'POST' }),
   getInvestments: () => request<InvestmentsData>('/plaid/investments'),
 
   // Savings goals
