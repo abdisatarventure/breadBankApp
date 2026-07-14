@@ -1,10 +1,12 @@
 <template>
   <q-page class="bb-dash q-pa-lg">
+    <!-- Phone gesture: pull down to sync banks + reload. -->
+    <q-pull-to-refresh @refresh="onPullRefresh" color="purple-4" bg-color="dark">
 
     <!-- Header -->
     <div class="bb-page-header row items-center justify-between">
       <div>
-        <div class="bb-page-title">Welcome Back!</div>
+        <div class="bb-page-title">Welcome Back{{ firstName ? ` ${firstName}` : '' }}!</div>
         <div class="bb-page-sub">Here's your financial summary for {{ currentMonth }}</div>
       </div>
       <div class="row items-center q-gutter-sm">
@@ -341,6 +343,7 @@
       </div>
 
     </template>
+    </q-pull-to-refresh>
 
     <TourGuide v-model="tourActive" :steps="tourSteps" />
   </q-page>
@@ -352,7 +355,16 @@ import { useQuasar } from 'quasar';
 import VueApexCharts from 'vue3-apexcharts';
 import type { ApexOptions } from 'apexcharts';
 import { api, type DashboardData, type Account } from 'src/services/api';
+import { auth } from 'src/services/auth';
 import TourGuide, { type TourStep } from 'src/components/TourGuide.vue';
+
+// First name for the "Welcome Back, X!" greeting.
+const firstName = computed(() => {
+  const name = auth.getUser()?.name?.trim();
+  if (!name) return '';
+  const first = name.split(/\s+/)[0] ?? '';
+  return first.charAt(0).toUpperCase() + first.slice(1);
+});
 
 const $q = useQuasar();
 
@@ -632,6 +644,16 @@ async function connectBank() {
   } catch (e) {
     bankError.value = e instanceof Error ? e.message : 'Failed to start bank linking';
     connecting.value = false;
+  }
+}
+
+// Pull-to-refresh: run the same bank sync + reload as the Sync button, then
+// release the spinner whether it worked or not.
+async function onPullRefresh(done: () => void) {
+  try {
+    await syncBank();
+  } finally {
+    done();
   }
 }
 

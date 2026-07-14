@@ -49,10 +49,17 @@ router.get('/', async (req: AuthRequest, res: Response) => {
         .input('userId', sql.Int, userId)
         .input('start', sql.Date, startOfMonth)
         .query(`
-          SELECT c.name AS category, SUM(${NET_SPEND}) AS total
-          FROM transactions t JOIN categories c ON t.category_id = c.id
+          -- A reimbursement linked to a specific expense is attributed to THAT
+          -- expense's category (via reimburses_transaction_id), so e.g. rent shows
+          -- net of a roommate's payback ($1,886.27 − $1,250 = $636.27). Unlinked
+          -- rows keep their own category.
+          SELECT COALESCE(ec.name, c.name) AS category, SUM(${NET_SPEND}) AS total
+          FROM transactions t
+          JOIN categories c ON t.category_id = c.id
+          LEFT JOIN transactions et ON et.id = t.reimburses_transaction_id AND et.user_id = @userId
+          LEFT JOIN categories   ec ON ec.id = et.category_id
           WHERE t.user_id = @userId AND t.date >= @start AND ${SPENDING_FILTER}
-          GROUP BY c.name HAVING SUM(${NET_SPEND}) > 0 ORDER BY total DESC
+          GROUP BY COALESCE(ec.name, c.name) HAVING SUM(${NET_SPEND}) > 0 ORDER BY total DESC
         `),
 
       pool.request()

@@ -1,4 +1,5 @@
 import http from 'http';
+import fs from 'fs';
 import path from 'path';
 import express from 'express';
 import cors from 'cors';
@@ -79,7 +80,11 @@ app.get('/api/health', (_req, res) => {
 // One origin for SPA + API: the client calls a relative `/api`, so it works
 // from localhost or any LAN/remote host without CORS or per-IP rebuilds.
 // (Path resolves the same whether started from backend/dist or backend/src.)
-const spaDir = path.resolve(__dirname, '../../frontend/breadBank/dist/spa');
+// Prefer the PWA build (installable app + service worker) when present.
+const distRoot = path.resolve(__dirname, '../../frontend/breadBank/dist');
+const spaDir = fs.existsSync(path.join(distRoot, 'pwa'))
+  ? path.join(distRoot, 'pwa')
+  : path.join(distRoot, 'spa');
 app.use(express.static(spaDir));
 // History fallback: non-API GETs return index.html so client-side routing
 // survives refreshes and deep links.

@@ -36,6 +36,28 @@ async function monthTotals(userId: number): Promise<{ income: number; net: numbe
   return { income, net: income - (Number(r?.spending) || 0) };
 }
 
+// The REAL money you've moved into savings, straight from the 'Savings' category
+// on your bank transactions (deposits in, withdrawals out). This is the ground
+// truth the whole page reconciles against — not the manual contribution ledger.
+async function actualSavings(userId: number): Promise<{ thisMonth: number; lifetime: number }> {
+  const now = new Date();
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  const res = await getPool().request()
+    .input('userId', sql.Int, userId)
+    .input('start', sql.Date, startOfMonth)
+    .query(`
+      SELECT
+        ISNULL(SUM(CASE WHEN t.date >= @start
+                        THEN (CASE WHEN t.type='debit' THEN t.amount ELSE -t.amount END)
+                        ELSE 0 END), 0) AS thisMonth,
+        ISNULL(SUM(CASE WHEN t.type='debit' THEN t.amount ELSE -t.amount END), 0) AS lifetime
+      FROM transactions t JOIN categories c ON c.id = t.category_id
+      WHERE t.user_id = @userId AND c.name = 'Savings'
+    `);
+  const row = res.recordset[0] as { thisMonth: number; lifetime: number };
+  return { thisMonth: round2(Number(row.thisMonth)), lifetime: round2(Number(row.lifetime)) };
+}
+
 // Ensure the user's single built-in Savings (reserve) bucket exists and return its id.
 async function ensureReserveGoal(userId: number): Promise<number> {
   const pool = getPool();

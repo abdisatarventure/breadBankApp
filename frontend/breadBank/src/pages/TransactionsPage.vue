@@ -1,5 +1,7 @@
 <template>
   <q-page class="bb-tx-page q-pa-lg">
+    <!-- Phone gesture: pull down to reload the list. -->
+    <q-pull-to-refresh @refresh="onPullRefresh" color="purple-4" bg-color="dark">
 
     <div class="bb-page-header">
       <div class="bb-page-title">Transactions</div>
@@ -93,6 +95,7 @@
         </div>
         <div
           class="bb-tx-row"
+          v-touch-swipe.mouse.left="() => quickCategorize(tx)"
           @click="openEdit(tx)"
         >
           <span class="bb-tx-col-date bb-tx-date">{{ fmtDate(tx.date) }}</span>
@@ -197,6 +200,7 @@
       </q-card>
     </q-dialog>
 
+    </q-pull-to-refresh>
   </q-page>
 </template>
 
@@ -372,6 +376,42 @@ function clearFilters() {
   filterAccount.value  = '';
   offset.value         = 0;
   void loadTransactions();
+}
+
+// Pull-to-refresh: reload the current page of results.
+async function onPullRefresh(done: () => void) {
+  try {
+    await loadTransactions();
+  } finally {
+    done();
+  }
+}
+
+// Swipe a row left → quick category picker, no dialog round-trip.
+function quickCategorize(tx: Transaction) {
+  if (!categories.value.length) return;
+  $q.bottomSheet({
+    message: `${tx.merchant || tx.description} — move to category`,
+    grid: true,
+    dark: true,
+    class: 'bb-sheet',
+    actions: categories.value.map(c => ({
+      label: c.name,
+      icon: c.icon || 'label',
+      color: 'purple-3',
+      id: String(c.id),
+    })),
+  }).onOk((action: { id: string }) => {
+    void (async () => {
+      try {
+        await api.updateTransaction(tx.id, { categoryId: Number(action.id) });
+        $q.notify({ type: 'positive', message: `Moved to ${categories.value.find(c => c.id === Number(action.id))?.name ?? 'category'}` });
+        await loadTransactions();
+      } catch (e) {
+        $q.notify({ type: 'negative', message: e instanceof Error ? e.message : 'Failed to update category' });
+      }
+    })();
+  });
 }
 
 function openEdit(tx: Transaction) {
@@ -552,4 +592,17 @@ onMounted(async () => {
 .bb-edit-amount  { font-size: 16px; font-weight: 700; }
 .bb-edit-label   { font-size: 12px; font-weight: 600; color: #9090B8; margin-bottom: 6px; }
 .bb-edit-actions { display: flex; justify-content: flex-end; gap: 10px; }
+
+// Phones: no sideways scrolling — each transaction becomes a two-line card:
+// merchant + amount on the first line, date · category · account underneath.
+@media (max-width: 599px) {
+  .bb-tx-header-row { display: none; }
+  .bb-tx-row, .bb-tx-month-header { min-width: 0; }
+  .bb-tx-row { flex-wrap: wrap; gap: 2px 10px; padding: 10px 12px; }
+  .bb-tx-col-desc { order: 1; flex: 1 1 0; min-width: 55%; }
+  .bb-tx-col-amt  { order: 2; width: auto; margin-left: auto; }
+  .bb-tx-col-date { order: 3; width: auto; }
+  .bb-tx-col-cat  { order: 4; width: auto; max-width: 45%; }
+  .bb-tx-col-acct { order: 5; width: auto; flex: 1 1 auto; text-align: right; }
+}
 </style>

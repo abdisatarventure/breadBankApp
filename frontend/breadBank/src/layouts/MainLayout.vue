@@ -91,6 +91,23 @@
       <router-view />
     </q-page-container>
 
+    <!-- Bottom tab bar — phones only; the drawer holds the rest under "More" -->
+    <q-footer v-if="$q.screen.width < 700" class="bb-tabbar">
+      <nav class="bb-tabbar-row">
+        <router-link
+          v-for="t in tabNav" :key="t.path" :to="t.path"
+          class="bb-tab" active-class="bb-tab-active"
+        >
+          <q-icon :name="t.icon" size="21px" />
+          <span>{{ t.label }}</span>
+        </router-link>
+        <a class="bb-tab" role="button" @click="drawerOpen = !drawerOpen">
+          <q-icon name="menu" size="21px" />
+          <span>More</span>
+        </a>
+      </nav>
+    </q-footer>
+
     <!-- Low Claude credit warning — shown once per login when running low. -->
     <q-dialog v-model="creditDialogOpen">
       <q-card class="bb-credit-card">
@@ -185,6 +202,14 @@ const generalNav: NavItem[] = [
   { icon: 'bar_chart', label: 'Reports', path: '/app/reports' },
 ];
 
+// The four destinations that earn a spot on the phone tab bar.
+const tabNav: NavItem[] = [
+  { icon: 'dashboard', label: 'Home', path: '/app/dashboard' },
+  { icon: 'receipt_long', label: 'Activity', path: '/app/transactions' },
+  { icon: 'savings', label: 'Budgets', path: '/app/budgets' },
+  { icon: 'event', label: 'Bills', path: '/app/bills' },
+];
+
 const otherNav: NavItem[] = [
   { icon: 'psychology', label: 'AI Assistant', path: '/app/ai-chat' },
   { icon: 'label', label: 'Categories', path: '/app/categories' },
@@ -251,7 +276,37 @@ async function saveCreditTotal() {
   }
 }
 
+// ── Bill reminders (local notifications) ─────────────────────
+// Fires when the app opens: any upcoming bill due within 3 days gets one
+// notification per day. Opt-in from the Bills page ("Remind me").
+async function checkBillReminders() {
+  if (localStorage.getItem('bb_bill_reminders') !== 'on') return;
+  if (!('Notification' in window) || Notification.permission !== 'granted') return;
+  try {
+    const { bills } = await api.getCalendar();
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const reg = 'serviceWorker' in navigator ? await navigator.serviceWorker.ready.catch(() => null) : null;
+    for (const b of bills) {
+      if (b.status !== 'upcoming') continue;
+      const days = Math.round((new Date(b.dueDate + 'T00:00:00').getTime() - today.getTime()) / 86400000);
+      if (days < 0 || days > 3) continue;
+      const key = `bb_notified_${b.id}_${new Date().toISOString().slice(0, 10)}`;
+      if (localStorage.getItem(key)) continue;
+      const when = days === 0 ? 'today' : days === 1 ? 'tomorrow' : `in ${days} days`;
+      const body = `${b.name} — $${b.amount.toFixed(2)} due ${when}`;
+      if (reg) await reg.showNotification('Upcoming bill', { body, icon: 'icons/icon-192x192.png', tag: String(b.id) });
+      else new Notification('Upcoming bill', { body });
+      localStorage.setItem(key, '1');
+    }
+  } catch { /* reminders are best-effort; never block the app */ }
+}
+
 onMounted(async () => {
+  void checkBillReminders();
+  // The Claude-credit warning only matters to the app owner (who funds the
+  // Anthropic account) — never show it to other users or the demo.
+  if (auth.getUser()?.email !== 'jibrilabdisatar@gmail.com') return;
   // Show the warning at most once per session (per login), so it greets you on
   // login but doesn't nag on every navigation.
   if (sessionStorage.getItem('bb_credit_warned') === '1') return;
@@ -417,6 +472,24 @@ onMounted(async () => {
   font-weight: 500;
   color: #ffffff;
 }
+
+/* ── Bottom tab bar (phones) ───────────────────────────────── */
+.bb-tabbar {
+  background: #0D0D24 !important;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  // Keep the bar above the iPhone home indicator in standalone (PWA) mode.
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.bb-tabbar-row { display: flex; }
+.bb-tab {
+  flex: 1;
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: 8px 0 6px;
+  font-size: 10px; font-weight: 600;
+  color: #6E6E9A; text-decoration: none; cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.bb-tab-active { color: #8B6FEC; }
 
 /* ── Low-credit warning dialog ─────────────────────────────── */
 .bb-credit-card {

@@ -46,8 +46,9 @@
         </div>
       </div>
 
-      <!-- Where to cut back (suggestions from last month) -->
-      <div v-if="data.suggestions.length" class="bb-bg-panel q-mb-lg">
+      <!-- Where to cut back (suggestions from last month). On phones this is
+           pushed BELOW "Your budgets" via flex order — see the media query. -->
+      <div v-if="data.suggestions.length" class="bb-bg-panel bb-sugg-panel q-mb-lg">
         <div class="bb-bg-panel-hdr">
           <q-icon name="trending_down" size="18px" style="color:#F59E0B" />
           <span>Where to cut back</span>
@@ -91,7 +92,7 @@
         </div>
 
         <div v-if="data.budgets.length === 0" class="bb-bg-empty">
-          No budgets yet. Add one below, or use a suggestion above.
+          No budgets yet. Add one below, or use a "Where to cut back" suggestion.
         </div>
 
         <div v-else class="bb-bg-list">
@@ -564,4 +565,11 @@ onMounted(load);
 .bb-planner-total strong { color: #F8FAFF; font-size: 16px; }
 .bb-planner-vs { color: #6E6E9A; font-size: 12px; margin-left: 8px; }
 .bb-planner-actions { display: flex; align-items: center; gap: 8px; }
+
+// Phones: show "Your budgets" first and push "Where to cut back" underneath.
+// Desktop keeps the suggestions on top (normal document order).
+@media (max-width: 599px) {
+  .bb-budgets { display: flex; flex-direction: column; }
+  .bb-sugg-panel { order: 2; }
+}
 </style>

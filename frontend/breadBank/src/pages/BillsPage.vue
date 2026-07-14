@@ -5,6 +5,15 @@
         <div class="bb-page-title">Bills & Due Dates</div>
         <div class="bb-page-sub">What's hitting your account, and when</div>
       </div>
+      <q-btn
+        no-caps flat dense
+        :icon="remindersOn ? 'notifications_active' : 'notifications_none'"
+        :label="remindersOn ? 'Reminders on' : 'Remind me'"
+        :style="`color:${remindersOn ? '#22C55E' : '#8B6FEC'}`"
+        @click="toggleReminders"
+      >
+        <q-tooltip>Get a notification when a bill is due within 3 days (checked when the app opens)</q-tooltip>
+      </q-btn>
     </div>
 
     <div v-if="loading && !data" class="bb-loading">
@@ -136,7 +145,36 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
+import { useQuasar } from 'quasar';
 import { api, type CalendarData, type Bill } from 'src/services/api';
+
+const $q = useQuasar();
+
+// ── Bill reminder opt-in ──────────────────────────────────────
+// The notifications themselves fire from MainLayout when the app opens; this
+// button just asks for browser permission and flips the preference.
+const remindersOn = ref(localStorage.getItem('bb_bill_reminders') === 'on');
+
+async function toggleReminders() {
+  if (remindersOn.value) {
+    localStorage.setItem('bb_bill_reminders', 'off');
+    remindersOn.value = false;
+    $q.notify({ message: 'Bill reminders turned off.' });
+    return;
+  }
+  if (!('Notification' in window)) {
+    $q.notify({ type: 'negative', message: 'This browser does not support notifications.' });
+    return;
+  }
+  const perm = await Notification.requestPermission();
+  if (perm !== 'granted') {
+    $q.notify({ type: 'warning', message: 'Notifications are blocked — allow them in your browser/site settings.' });
+    return;
+  }
+  localStorage.setItem('bb_bill_reminders', 'on');
+  remindersOn.value = true;
+  $q.notify({ type: 'positive', message: "You'll be reminded of bills due within 3 days when you open the app." });
+}
 
 const loading = ref(true);
 const loadError = ref('');
