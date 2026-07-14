@@ -470,6 +470,11 @@ export const api = {
   // Subscriptions
   getSubscriptions: () => request<SubscriptionsData>('/subscriptions'),
 
+  // User preferences (per-account, stored server-side)
+  getSettings: () => request<{ theme: string }>('/settings'),
+  setTheme: (theme: string) =>
+    request<{ theme: string }>('/settings/theme', { method: 'PUT', body: JSON.stringify({ theme }) }),
+
   // Bill calendar
   getCalendar: (from?: string, to?: string) => {
     const params = new URLSearchParams();

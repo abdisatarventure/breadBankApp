@@ -11,14 +11,14 @@
     <!-- Toolbar -->
     <div class="bb-tx-toolbar q-mb-md">
       <div class="bb-search-box">
-        <q-icon name="search" size="16px" style="color:#6E6E9A" />
+        <q-icon name="search" size="16px" style="color: var(--bb-text-dim)" />
         <input
           v-model="search"
           placeholder="Search merchant or description..."
           class="bb-search-input"
           @input="onSearchInput"
         />
-        <q-icon v-if="search" name="close" size="14px" style="color:#6E6E9A;cursor:pointer" @click="clearSearch" />
+        <q-icon v-if="search" name="close" size="14px" style="color: var(--bb-text-dim);cursor:pointer" @click="clearSearch" />
       </div>
       <q-select
         v-model="filterCategory"
@@ -43,11 +43,11 @@
         class="bb-filter-select"
         @update:model-value="() => { offset = 0; void loadTransactions(); }"
       />
-      <q-btn no-caps flat label="Clear filters" size="sm" style="color:#6E6E9A" @click="clearFilters" />
+      <q-btn no-caps flat label="Clear filters" size="sm" style="color: var(--bb-text-dim)" @click="clearFilters" />
       <q-btn
         no-caps flat icon="download" label="Export CSV" size="sm"
         :loading="exporting" :disable="total === 0"
-        style="color:#8B6FEC"
+        style="color: var(--bb-accent-light)"
         @click="exportCsv"
       >
         <q-tooltip>Download the filtered transactions as a CSV file</q-tooltip>
@@ -67,13 +67,13 @@
 
     <!-- Empty -->
     <div v-else-if="transactions.length === 0" class="bb-stub">
-      <q-icon name="receipt_long" size="52px" style="color:#6C4ED4" class="bb-stub-icon" />
+      <q-icon name="receipt_long" size="52px" style="color: var(--bb-accent)" class="bb-stub-icon" />
       <div class="bb-stub-title">No transactions found</div>
       <div class="bb-stub-sub">
         {{ search || filterCategory !== 'All Categories' ? 'Try adjusting your filters' : 'Upload a CSV to get started' }}
       </div>
       <q-btn v-if="!search" no-caps unelevated label="Upload CSV" to="/app/upload"
-        style="background:linear-gradient(135deg,#6C4ED4,#E040FB);color:#fff;border-radius:8px;margin-top:8px" />
+        style="background:linear-gradient(135deg,var(--bb-accent),var(--bb-accent-2));color:var(--bb-on-accent);border-radius:8px;margin-top:8px" />
     </div>
 
     <!-- Table -->
@@ -192,9 +192,9 @@
         </template>
 
         <div class="bb-edit-actions q-mt-lg">
-          <q-btn flat no-caps label="Cancel" style="color:#6E6E9A" v-close-popup />
+          <q-btn flat no-caps label="Cancel" style="color: var(--bb-text-dim)" v-close-popup />
           <q-btn no-caps unelevated label="Save" :loading="saving"
-            style="background:linear-gradient(135deg,#6C4ED4,#E040FB);color:#fff;border-radius:8px;padding:6px 20px"
+            style="background:linear-gradient(135deg,var(--bb-accent),var(--bb-accent-2));color:var(--bb-on-accent);border-radius:8px;padding:6px 20px"
             @click="saveEdit" />
         </div>
       </q-card>
@@ -465,6 +465,10 @@ onMounted(async () => {
   if (typeof route.query.category === 'string' && route.query.category) {
     filterCategory.value = route.query.category;
   }
+  // ?account=<id> deep link (e.g. from Dashboard V2's "Do this next" card).
+  if (typeof route.query.account === 'string' && /^\d+$/.test(route.query.account)) {
+    filterAccount.value = route.query.account;
+  }
   try {
     const [, cats, mos, accts] = await Promise.all([
       loadTransactions(), api.getCategories(), api.getTransactionMonths(), api.getAccounts(),
@@ -482,9 +486,9 @@ onMounted(async () => {
 </script>
 
 <style lang="scss">
-.bb-tx-page { background-color: #0A0A1B; min-height: 100vh; }
+.bb-tx-page { background-color: var(--bb-bg); min-height: 100vh; }
 
-.bb-loading { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 300px; gap: 16px; color: #6E6E9A; font-size: 14px; }
+.bb-loading { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 300px; gap: 16px; color: var(--bb-text-dim); font-size: 14px; }
 
 .bb-tx-toolbar {
   display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
@@ -492,45 +496,45 @@ onMounted(async () => {
 
 .bb-search-box {
   display: flex; align-items: center; gap: 8px; flex: 1; min-width: 200px;
-  background: #0F1030; border: 1px solid rgba(255,255,255,0.08);
+  background: var(--bb-surface); border: 1px solid var(--bb-border);
   border-radius: 8px; padding: 8px 12px;
 }
 
 .bb-search-input {
   background: none; border: none; outline: none; flex: 1;
-  color: #ffffff; font-size: 13px;
-  &::placeholder { color: #6E6E9A; }
+  color: var(--bb-text); font-size: 13px;
+  &::placeholder { color: var(--bb-text-dim); }
 }
 
 .bb-filter-select {
   min-width: 180px;
-  .q-field__control { background: #0F1030 !important; border-color: rgba(255,255,255,0.08) !important; }
+  .q-field__control { background: var(--bb-surface) !important; border-color: var(--bb-border) !important; }
 }
 
-.bb-tx-table { border-radius: 12px; overflow-x: auto; border: 1px solid rgba(255,255,255,0.06); }
+.bb-tx-table { border-radius: 12px; overflow-x: auto; border: 1px solid var(--bb-border); }
 // Keep the columns from crushing into each other — scroll the table sideways
 // instead once they no longer fit.
 .bb-tx-header-row, .bb-tx-row, .bb-tx-month-header { min-width: 660px; }
 
 .bb-tx-header-row {
   display: flex; align-items: center; gap: 12px; padding: 10px 16px;
-  background: #0F1030; font-size: 10px; font-weight: 600;
-  letter-spacing: 0.6px; text-transform: uppercase; color: #4D4D70;
-  border-bottom: 1px solid rgba(255,255,255,0.05);
+  background: var(--bb-surface); font-size: 10px; font-weight: 600;
+  letter-spacing: 0.6px; text-transform: uppercase; color: var(--bb-text-muted);
+  border-bottom: 1px solid var(--bb-border);
 }
 
 .bb-tx-month-header {
-  padding: 8px 16px; background: #0C0C22;
+  padding: 8px 16px; background: var(--bb-surface-2);
   font-size: 11px; font-weight: 700; letter-spacing: 0.6px;
-  text-transform: uppercase; color: #8B6FEC;
-  border-bottom: 1px solid rgba(255,255,255,0.05);
+  text-transform: uppercase; color: var(--bb-accent-light);
+  border-bottom: 1px solid var(--bb-border);
 }
 
 .bb-tx-row {
   display: flex; align-items: center; gap: 12px; padding: 12px 16px;
-  background: #0A0A1B; border-bottom: 1px solid rgba(255,255,255,0.04);
+  background: var(--bb-bg); border-bottom: 1px solid var(--bb-border);
   cursor: pointer; transition: background 0.1s;
-  &:hover { background: #0F1030; }
+  &:hover { background: var(--bb-surface); }
   &:last-child { border-bottom: none; }
 }
 
@@ -540,17 +544,17 @@ onMounted(async () => {
 .bb-tx-col-acct { width: 130px; flex-shrink: 0; min-width: 0; }
 .bb-tx-col-amt  { width: 104px; flex-shrink: 0; text-align: right; font-weight: 600; font-size: 13px; white-space: nowrap; }
 
-.bb-tx-date    { font-size: 12px; color: #6E6E9A; white-space: nowrap; }
-.bb-tx-merchant { font-size: 13px; font-weight: 500; color: #ffffff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.bb-tx-desc-small { font-size: 11px; color: #4D4D70; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.bb-tx-acct    { font-size: 11px; color: #6E6E9A; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bb-tx-date    { font-size: 12px; color: var(--bb-text-dim); white-space: nowrap; }
+.bb-tx-merchant { font-size: 13px; font-weight: 500; color: var(--bb-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bb-tx-desc-small { font-size: 11px; color: var(--bb-text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bb-tx-acct    { font-size: 11px; color: var(--bb-text-dim); display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 .bb-cat-chip {
   font-size: 11px; font-weight: 500; padding: 3px 9px;
   border-radius: 20px; display: inline-block;
   max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.bb-cat-unknown { background: rgba(110,110,154,0.15) !important; color: #6E6E9A !important; }
+.bb-cat-unknown { background: rgba(110,110,154,0.15) !important; color: var(--bb-text-dim) !important; }
 /* Unknown category, direction-tagged: green when money came in, red when it left. */
 .bb-cat-unknown-in  { background: rgba(34,197,94,0.15) !important;  color: #22C55E !important; }
 .bb-cat-unknown-out { background: rgba(239,68,68,0.15) !important;  color: #EF4444 !important; }
@@ -561,36 +565,36 @@ onMounted(async () => {
 .bb-amt-debit  { color: #EF4444 !important; }
 
 /* Row: struck-through gross + green net when an expense is (partly) reimbursed */
-.bb-tx-gross { color: #6E6E9A; text-decoration: line-through; font-size: 12px; margin-right: 6px; }
+.bb-tx-gross { color: var(--bb-text-dim); text-decoration: line-through; font-size: 12px; margin-right: 6px; }
 .bb-tx-net   { color: #22C55E; font-weight: 600; }
 
 /* Reimbursement linker inside the edit dialog */
-.bb-reimb-empty { color: #6E6E9A; font-size: 12px; margin-bottom: 12px; }
+.bb-reimb-empty { color: var(--bb-text-dim); font-size: 12px; margin-bottom: 12px; }
 .bb-reimb-list  { display: flex; flex-direction: column; gap: 2px; margin-bottom: 10px;
                   max-height: 160px; overflow-y: auto; }
 .bb-reimb-item  { display: flex; align-items: center; gap: 8px; cursor: pointer;
-                  padding: 2px 0; font-size: 12px; color: #C6C6E5; }
+                  padding: 2px 0; font-size: 12px; color: var(--bb-text-soft); }
 .bb-reimb-desc  { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bb-reimb-amt   { color: #22C55E; font-weight: 600; }
-.bb-reimb-net   { font-size: 13px; color: #E2E2FF; margin-bottom: 8px; }
+.bb-reimb-net   { font-size: 13px; color: var(--bb-text-soft); margin-bottom: 8px; }
 .bb-reimb-net strong { color: #14B8A6; }
-.bb-reimb-sub   { color: #6E6E9A; font-size: 11px; margin-left: 6px; }
+.bb-reimb-sub   { color: var(--bb-text-dim); font-size: 11px; margin-left: 6px; }
 
 .bb-pagination {
   display: flex; align-items: center; justify-content: center; gap: 16px;
 }
-.bb-page-btn  { color: #8B6FEC !important; font-size: 13px; }
-.bb-page-info { font-size: 13px; color: #6E6E9A; min-width: 100px; text-align: center; }
+.bb-page-btn  { color: var(--bb-accent-light) !important; font-size: 13px; }
+.bb-page-info { font-size: 13px; color: var(--bb-text-dim); min-width: 100px; text-align: center; }
 
 .bb-edit-dialog {
-  background: #0F1030; border: 1px solid rgba(255,255,255,0.1);
+  background: var(--bb-surface); border: 1px solid var(--bb-border);
   border-radius: 16px; padding: 28px; width: 92vw; max-width: 380px;
 }
-.bb-edit-title   { font-size: 16px; font-weight: 700; color: #ffffff; margin-bottom: 16px; }
+.bb-edit-title   { font-size: 16px; font-weight: 700; color: var(--bb-text); margin-bottom: 16px; }
 .bb-edit-info    { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
-.bb-edit-merchant { font-size: 14px; font-weight: 500; color: #ffffff; }
+.bb-edit-merchant { font-size: 14px; font-weight: 500; color: var(--bb-text); }
 .bb-edit-amount  { font-size: 16px; font-weight: 700; }
-.bb-edit-label   { font-size: 12px; font-weight: 600; color: #9090B8; margin-bottom: 6px; }
+.bb-edit-label   { font-size: 12px; font-weight: 600; color: var(--bb-text-soft); margin-bottom: 6px; }
 .bb-edit-actions { display: flex; justify-content: flex-end; gap: 10px; }
 
 // Phones: no sideways scrolling — each transaction becomes a two-line card:

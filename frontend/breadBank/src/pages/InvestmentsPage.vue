@@ -12,13 +12,13 @@
           no-caps unelevated icon="refresh" label="Refresh"
           :loading="loading"
           @click="load"
-          style="background:rgba(108,78,212,0.15);color:#8B6FEC;border-radius:8px"
+          style="background:rgba(var(--bb-accent-rgb),0.15);color: var(--bb-accent-light);border-radius:8px"
         />
         <q-btn
           no-caps unelevated icon="add" label="Connect brokerage"
           :loading="connecting"
           @click="connect"
-          style="background:linear-gradient(135deg,#6C4ED4,#E040FB);color:#fff;border-radius:8px"
+          style="background:linear-gradient(135deg,var(--bb-accent),var(--bb-accent-2));color:var(--bb-on-accent);border-radius:8px"
         />
       </div>
     </div>
@@ -35,7 +35,7 @@
 
     <!-- Empty state -->
     <div v-else-if="data && data.holdings.length === 0" class="bb-no-data">
-      <q-icon name="trending_up" size="48px" style="color:#6C4ED4;opacity:0.5" />
+      <q-icon name="trending_up" size="48px" style="color: var(--bb-accent);opacity:0.5" />
       <div class="bb-no-data-title">No investments connected yet</div>
       <div class="bb-no-data-sub">
         Connect Fidelity or Robinhood through Plaid to see your holdings, value, and gains here.
@@ -44,7 +44,7 @@
         no-caps unelevated label="Connect brokerage"
         :loading="connecting"
         @click="connect"
-        style="background:linear-gradient(135deg,#6C4ED4,#E040FB);color:#fff;border-radius:8px;margin-top:8px"
+        style="background:linear-gradient(135deg,var(--bb-accent),var(--bb-accent-2));color:var(--bb-on-accent);border-radius:8px;margin-top:8px"
       />
     </div>
 
@@ -144,7 +144,7 @@
                     <td class="bb-num">{{ h.quantity.toLocaleString('en-US', { maximumFractionDigits: 4 }) }}</td>
                     <td class="bb-num">{{ fmt(h.price) }}</td>
                     <td class="bb-num bb-strong">{{ fmt(h.value) }}</td>
-                    <td class="bb-num" :style="h.gain == null ? 'color:#6E6E9A' : `color:${h.gain >= 0 ? '#22C55E' : '#EF4444'}`">
+                    <td class="bb-num" :style="h.gain == null ? 'color: var(--bb-text-dim)' : `color:${h.gain >= 0 ? '#22C55E' : '#EF4444'}`">
                       {{ h.gain == null ? '—' : fmtSigned(h.gain) }}
                     </td>
                   </tr>
@@ -226,21 +226,21 @@ const allocationOpts = computed<ApexOptions>(() => ({
 </script>
 
 <style lang="scss">
-.bb-invest { background-color: #0A0A1B; min-height: 100vh; }
+.bb-invest { background-color: var(--bb-bg); min-height: 100vh; }
 
 .bb-holdings-wrap { overflow-x: auto; }
 .bb-holdings {
   width: 100%; border-collapse: collapse; font-size: 13px;
   th {
     text-align: left; padding: 8px 10px; font-size: 10px; font-weight: 600;
-    letter-spacing: 0.6px; text-transform: uppercase; color: #6E6E9A;
-    border-bottom: 1px solid rgba(255,255,255,0.07);
+    letter-spacing: 0.6px; text-transform: uppercase; color: var(--bb-text-dim);
+    border-bottom: 1px solid var(--bb-border);
   }
-  td { padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.04); color: #C8C8E0; vertical-align: top; }
-  tbody tr:hover td { background: rgba(108,78,212,0.06); }
+  td { padding: 10px; border-bottom: 1px solid var(--bb-border); color: var(--bb-text-soft); vertical-align: top; }
+  tbody tr:hover td { background: rgba(var(--bb-accent-rgb),0.06); }
   .bb-num { text-align: right; white-space: nowrap; }
-  .bb-strong { color: #ffffff; font-weight: 600; }
+  .bb-strong { color: var(--bb-text); font-weight: 600; }
 }
-.bb-sec-name { color: #ffffff; font-weight: 600; }
-.bb-sec-sub  { font-size: 11px; color: #6E6E9A; margin-top: 2px; }
+.bb-sec-name { color: var(--bb-text); font-weight: 600; }
+.bb-sec-sub  { font-size: 11px; color: var(--bb-text-dim); margin-top: 2px; }
 </style>

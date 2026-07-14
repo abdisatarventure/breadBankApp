@@ -112,15 +112,15 @@ onBeforeUnmount(() => { window.removeEventListener('resize', onResize); window.r
   background: #14143a; border: 1px solid rgba(140, 111, 236, 0.35);
   border-radius: 16px; padding: 18px 18px 14px;
   box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
-  color: #E2E2FF;
+  color: var(--bb-text-soft);
 }
-.tour-count { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #8B6FEC; font-weight: 700; }
-.tour-title { font-size: 16px; font-weight: 700; color: #fff; margin: 6px 0 8px; }
-.tour-body  { font-size: 13px; line-height: 1.5; color: #B8B8DA; }
+.tour-count { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--bb-accent-light); font-weight: 700; }
+.tour-title { font-size: 16px; font-weight: 700; color: var(--bb-text); margin: 6px 0 8px; }
+.tour-body  { font-size: 13px; line-height: 1.5; color: var(--bb-text-soft); }
 
 .tour-dots { display: flex; gap: 6px; margin: 14px 0 12px; }
 .tour-dot  { width: 6px; height: 6px; border-radius: 999px; background: rgba(255,255,255,0.18); transition: all 0.2s; }
-.tour-dot.is-active { width: 18px; background: #8B6FEC; }
+.tour-dot.is-active { width: 18px; background: var(--bb-accent-light); }
 
 .tour-actions { display: flex; align-items: center; justify-content: space-between; }
 .tour-btns { display: flex; gap: 8px; }
@@ -128,8 +128,8 @@ onBeforeUnmount(() => { window.removeEventListener('resize', onResize); window.r
   border: none; cursor: pointer; font-size: 13px; font-weight: 600;
   border-radius: 999px; padding: 8px 16px;
 }
-.tour-skip { background: transparent; color: #6E6E9A; padding-left: 0; }
-.tour-back { background: rgba(255,255,255,0.08); color: #C6C6E5; }
-.tour-next { background: linear-gradient(135deg, #6C4ED4, #E040FB); color: #fff; }
+.tour-skip { background: transparent; color: var(--bb-text-dim); padding-left: 0; }
+.tour-back { background: rgba(255,255,255,0.08); color: var(--bb-text-soft); }
+.tour-next { background: linear-gradient(135deg,var(--bb-accent),var(--bb-accent-2)); color: var(--bb-on-accent); }
 .tour-next:hover, .tour-back:hover { filter: brightness(1.1); }
 </style>

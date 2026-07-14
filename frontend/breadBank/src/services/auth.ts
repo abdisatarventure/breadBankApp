@@ -87,12 +87,16 @@ export const auth = {
     name?: string,
     securityQuestion?: string,
     securityAnswer?: string,
+    consentAccepted?: boolean,
   ) => {
     const normalizedEmail = email.trim();
     const normalizedPassword = password.trim();
 
     if (!normalizedEmail || !normalizedPassword) {
       throw new Error('Please enter both email and password.');
+    }
+    if (consentAccepted !== true) {
+      throw new Error('Please accept the Privacy Policy to create an account.');
     }
 
     const response = await request<{ id: number; email: string; name: string | null }>('/auth/register', {
@@ -103,6 +107,7 @@ export const auth = {
         name: name?.trim() ?? null,
         securityQuestion: securityQuestion?.trim() || null,
         securityAnswer: securityAnswer?.trim() || null,
+        consentAccepted: true,
       }),
     });
 
@@ -137,12 +142,39 @@ export const auth = {
     });
   },
 
+  // Permanently delete the signed-in account and all its data (requires password).
+  deleteAccount: async (password: string) => {
+    return request<{ ok: boolean }>('/auth/me', {
+      method: 'DELETE',
+      body: JSON.stringify({ password }),
+    });
+  },
+
   logout: () => {
     safeStorageRemove(STORAGE_TOKEN_KEY);
     safeStorageRemove(STORAGE_USER_KEY);
   },
 
   getToken: () => safeStorageGet(STORAGE_TOKEN_KEY),
+
+  // When the stored JWT expires, in epoch ms — decoded client-side (the server
+  // still verifies for real). Lets the UI log out the moment a session lapses
+  // instead of limping along with a dead token.
+  tokenExpiresAt: (): number | null => {
+    const token = safeStorageGet(STORAGE_TOKEN_KEY);
+    if (!token) return null;
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1] ?? '')) as { exp?: number };
+      return payload.exp ? payload.exp * 1000 : null;
+    } catch {
+      return null;
+    }
+  },
+
+  isExpired: (): boolean => {
+    const exp = auth.tokenExpiresAt();
+    return exp !== null && Date.now() >= exp;
+  },
 
   getUser: (): AuthUser | null => {
     const raw = safeStorageGet(STORAGE_USER_KEY);
@@ -157,5 +189,6 @@ export const auth = {
     }
   },
 
-  isAuthenticated: () => Boolean(safeStorageGet(STORAGE_TOKEN_KEY)),
+  // Authenticated = a token exists AND it hasn't expired yet.
+  isAuthenticated: () => Boolean(safeStorageGet(STORAGE_TOKEN_KEY)) && !auth.isExpired(),
 };

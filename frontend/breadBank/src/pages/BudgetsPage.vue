@@ -32,7 +32,7 @@
         </div>
         <div class="col-6 col-md-4">
           <div class="bb-stat">
-            <div class="bb-stat-lbl"><span class="bb-dot" style="background:#6C4ED4"></span>SPENT THIS MONTH</div>
+            <div class="bb-stat-lbl"><span class="bb-dot" style="background: var(--bb-accent)"></span>SPENT THIS MONTH</div>
             <div class="bb-stat-val">{{ fmt(data.summary.totalSpent) }}</div>
             <div class="bb-stat-row"><span class="bb-stat-cmp">of budgeted categories</span></div>
           </div>
@@ -77,7 +77,7 @@
       <!-- Your budgets -->
       <div class="bb-bg-panel q-mb-lg">
         <div class="bb-bg-panel-hdr">
-          <q-icon name="savings" size="18px" style="color:#8B6FEC" />
+          <q-icon name="savings" size="18px" style="color: var(--bb-accent-light)" />
           <span>Your budgets</span>
           <q-space />
           <q-btn
@@ -167,7 +167,7 @@
           />
           <q-input v-model.number="addLimit" type="number" dense outlined dark prefix="$" label="Monthly limit" class="bb-bg-add-amt" />
           <q-btn no-caps unelevated label="Add budget" :loading="adding" :disable="!addCategory || !addLimit"
-            style="background:linear-gradient(135deg,#6C4ED4,#E040FB);color:#fff;border-radius:8px"
+            style="background:linear-gradient(135deg,var(--bb-accent),var(--bb-accent-2));color:var(--bb-on-accent);border-radius:8px"
             @click="addBudget" />
         </div>
       </div>
@@ -178,7 +178,7 @@
       <q-card class="bb-planner-card">
         <div class="bb-planner-hdr">
           <div>
-            <div class="bb-planner-title"><q-icon name="auto_awesome" size="18px" style="color:#8B6FEC" /> AI budget plan</div>
+            <div class="bb-planner-title"><q-icon name="auto_awesome" size="18px" style="color: var(--bb-accent-light)" /> AI budget plan</div>
             <div class="bb-planner-sub">Built from last month's spending. Adjust the target or edit any amount before applying.</div>
           </div>
           <q-btn flat round dense icon="close" v-close-popup />
@@ -226,7 +226,7 @@
               <q-btn
                 no-caps unelevated :label="`Apply ${plan.length} budget${plan.length === 1 ? '' : 's'}`"
                 :loading="applying"
-                style="background:linear-gradient(135deg,#6C4ED4,#E040FB);color:#fff;border-radius:8px"
+                style="background:linear-gradient(135deg,var(--bb-accent),var(--bb-accent-2));color:var(--bb-on-accent);border-radius:8px"
                 @click="applyPlan"
               />
             </div>
@@ -447,44 +447,44 @@ onMounted(load);
 </script>
 
 <style lang="scss">
-.bb-budgets { background-color: #0A0A1B; min-height: 100vh; }
+.bb-budgets { background-color: var(--bb-bg); min-height: 100vh; }
 
 .bb-bg-panel {
-  background: #0F1030; border: 1px solid rgba(255,255,255,0.07);
+  background: var(--bb-surface); border: 1px solid var(--bb-border);
   border-radius: 14px; padding: 20px;
 }
 .bb-bg-panel-hdr {
   display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 16px;
-  font-size: 14px; font-weight: 600; color: #ffffff;
+  font-size: 14px; font-weight: 600; color: var(--bb-text);
 }
-.bb-bg-panel-sub { font-size: 12px; font-weight: 400; color: #6E6E9A; flex-basis: 100%; }
-.bb-bg-empty { color: #6E6E9A; font-size: 13px; padding: 8px 0 16px; }
+.bb-bg-panel-sub { font-size: 12px; font-weight: 400; color: var(--bb-text-dim); flex-basis: 100%; }
+.bb-bg-empty { color: var(--bb-text-dim); font-size: 13px; padding: 8px 0 16px; }
 
 .bb-category-icon { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; flex-shrink: 0; }
 
 // Suggestions
 .bb-sugg-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }
 .bb-sugg-card {
-  background: #0A0A1B; border: 1px solid rgba(255,255,255,0.06); border-radius: 12px;
+  background: var(--bb-bg); border: 1px solid var(--bb-border); border-radius: 12px;
   padding: 14px; display: flex; flex-direction: column; gap: 8px;
 }
 .bb-sugg-top { display: flex; align-items: center; gap: 10px; }
-.bb-sugg-name { font-size: 13px; font-weight: 600; color: #F8FAFF; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.bb-sugg-last { font-size: 12px; color: #6E6E9A; }
+.bb-sugg-name { font-size: 13px; font-weight: 600; color: var(--bb-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bb-sugg-last { font-size: 12px; color: var(--bb-text-dim); }
 
 // Budget rows
 .bb-bg-list { display: flex; flex-direction: column; gap: 14px; }
 .bb-bg-row { display: flex; align-items: center; gap: 14px; }
 .bb-bg-main { flex: 1; min-width: 0; }
 .bb-bg-row-top { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 6px; }
-.bb-bg-name { font-size: 14px; font-weight: 600; color: #F8FAFF; }
-.bb-bg-amounts { font-size: 13px; color: #9090B8; white-space: nowrap; }
-.bb-bg-limit { color: #F8FAFF; font-weight: 600; cursor: pointer; border-bottom: 1px dashed rgba(255,255,255,0.25); }
+.bb-bg-name { font-size: 14px; font-weight: 600; color: var(--bb-text); }
+.bb-bg-amounts { font-size: 13px; color: var(--bb-text-soft); white-space: nowrap; }
+.bb-bg-limit { color: var(--bb-text); font-weight: 600; cursor: pointer; border-bottom: 1px dashed var(--bb-border); }
 .bb-bg-bar-wrap { height: 7px; background: rgba(255,255,255,0.06); border-radius: 4px; overflow: hidden; }
 .bb-bg-bar { height: 100%; border-radius: 4px; transition: width 0.5s ease; }
 .bb-bg-row-bot { display: flex; justify-content: space-between; margin-top: 5px; font-size: 11px; font-weight: 600; }
-.bb-bg-last { color: #6E6E9A; font-weight: 400; }
-.bb-bg-del { color: #6E6E9A; flex-shrink: 0; &:hover { color: #EF4444; } }
+.bb-bg-last { color: var(--bb-text-dim); font-weight: 400; }
+.bb-bg-del { color: var(--bb-text-dim); flex-shrink: 0; &:hover { color: #EF4444; } }
 
 // Expandable category rows
 .bb-bg-item {
@@ -493,29 +493,29 @@ onMounted(load);
 }
 .bb-bg-row--click { cursor: pointer; }
 .bb-bg-chevron {
-  color: #6E6E9A; flex-shrink: 0; transition: transform 0.2s ease;
-  &.open { transform: rotate(180deg); color: #8B6FEC; }
+  color: var(--bb-text-dim); flex-shrink: 0; transition: transform 0.2s ease;
+  &.open { transform: rotate(180deg); color: var(--bb-accent-light); }
 }
 .bb-bg-tx {
   margin: 4px 0 6px 48px; padding: 6px 12px;
-  background: #0A0A1B; border: 1px solid rgba(255,255,255,0.06); border-radius: 10px;
+  background: var(--bb-bg); border: 1px solid var(--bb-border); border-radius: 10px;
 }
 .bb-bg-tx-state {
   display: flex; align-items: center; gap: 10px;
-  color: #6E6E9A; font-size: 12px; padding: 10px 2px;
+  color: var(--bb-text-dim); font-size: 12px; padding: 10px 2px;
 }
 .bb-bg-tx-row {
   display: flex; align-items: center; gap: 12px; padding: 7px 2px;
-  font-size: 13px; border-bottom: 1px solid rgba(255,255,255,0.04);
+  font-size: 13px; border-bottom: 1px solid var(--bb-border);
   &:last-child { border-bottom: none; }
 }
-.bb-bg-tx-date { color: #6E6E9A; font-size: 11px; width: 52px; flex-shrink: 0; }
-.bb-bg-tx-desc { color: #D7D7EC; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.bb-bg-tx-amt { color: #F8FAFF; font-weight: 600; white-space: nowrap; &.is-credit { color: #22C55E; } }
+.bb-bg-tx-date { color: var(--bb-text-dim); font-size: 11px; width: 52px; flex-shrink: 0; }
+.bb-bg-tx-desc { color: var(--bb-text-soft); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bb-bg-tx-amt { color: var(--bb-text); font-weight: 600; white-space: nowrap; &.is-credit { color: #22C55E; } }
 
 .bb-bg-add {
   display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
-  margin-top: 20px; padding-top: 18px; border-top: 1px solid rgba(255,255,255,0.06);
+  margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--bb-border);
 }
 .bb-bg-add-cat { min-width: 200px; flex: 1; }
 .bb-bg-add-amt { width: 150px; }
@@ -523,47 +523,47 @@ onMounted(load);
 // Header + actions
 .bb-budgets-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
 .bb-ai-btn {
-  background: linear-gradient(135deg, #6C4ED4, #E040FB); color: #fff; border-radius: 10px;
+  background: linear-gradient(135deg,var(--bb-accent),var(--bb-accent-2)); color: var(--bb-on-accent); border-radius: 10px;
   padding: 8px 16px; font-weight: 600; flex-shrink: 0;
 }
 .bb-trim-btn { color: #F59E0B; }
 
 // Planner dialog
 .bb-planner-card {
-  background: #0F1030; color: #E6E6F5; width: 560px; max-width: 92vw;
-  border: 1px solid rgba(255,255,255,0.08); border-radius: 16px; padding: 20px;
+  background: var(--bb-surface); color: var(--bb-text-soft); width: 560px; max-width: 92vw;
+  border: 1px solid var(--bb-border); border-radius: 16px; padding: 20px;
 }
 .bb-planner-hdr { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 16px; }
-.bb-planner-title { font-size: 18px; font-weight: 700; color: #F8FAFF; display: flex; align-items: center; gap: 8px; }
-.bb-planner-sub { color: #8F8FB5; font-size: 13px; margin-top: 4px; max-width: 420px; }
+.bb-planner-title { font-size: 18px; font-weight: 700; color: var(--bb-text); display: flex; align-items: center; gap: 8px; }
+.bb-planner-sub { color: var(--bb-text-soft); font-size: 13px; margin-top: 4px; max-width: 420px; }
 
 .bb-planner-controls {
   display: flex; align-items: center; gap: 16px; padding: 14px 16px; margin-bottom: 16px;
-  background: #0A0A1B; border: 1px solid rgba(255,255,255,0.06); border-radius: 12px;
+  background: var(--bb-bg); border: 1px solid var(--bb-border); border-radius: 12px;
 }
 .bb-planner-slider { flex: 1; }
-.bb-planner-slider-lbl { font-size: 12px; color: #C6C6E5; margin-bottom: 4px; }
-.bb-planner-slider-lbl strong { color: #8B6FEC; }
+.bb-planner-slider-lbl { font-size: 12px; color: var(--bb-text-soft); margin-bottom: 4px; }
+.bb-planner-slider-lbl strong { color: var(--bb-accent-light); }
 
 .bb-planner-loading, .bb-planner-empty {
   display: flex; align-items: center; justify-content: center; gap: 12px;
-  min-height: 160px; color: #8F8FB5; text-align: center; font-size: 14px;
+  min-height: 160px; color: var(--bb-text-soft); text-align: center; font-size: 14px;
 }
 
 .bb-planner-list { display: flex; flex-direction: column; gap: 10px; max-height: 46vh; overflow-y: auto; padding-right: 4px; }
 .bb-planner-row { display: flex; align-items: center; gap: 12px; }
 .bb-planner-info { flex: 1; min-width: 0; }
-.bb-planner-name { font-size: 14px; font-weight: 600; color: #F8FAFF; }
-.bb-planner-note { font-size: 12px; color: #6E6E9A; margin-top: 2px; }
+.bb-planner-name { font-size: 14px; font-weight: 600; color: var(--bb-text); }
+.bb-planner-note { font-size: 12px; color: var(--bb-text-dim); margin-top: 2px; }
 .bb-planner-amt { width: 120px; flex-shrink: 0; }
 
 .bb-planner-foot {
   display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;
-  margin-top: 18px; padding-top: 16px; border-top: 1px solid rgba(255,255,255,0.08);
+  margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--bb-border);
 }
-.bb-planner-total { font-size: 14px; color: #C6C6E5; }
-.bb-planner-total strong { color: #F8FAFF; font-size: 16px; }
-.bb-planner-vs { color: #6E6E9A; font-size: 12px; margin-left: 8px; }
+.bb-planner-total { font-size: 14px; color: var(--bb-text-soft); }
+.bb-planner-total strong { color: var(--bb-text); font-size: 16px; }
+.bb-planner-vs { color: var(--bb-text-dim); font-size: 12px; margin-left: 8px; }
 .bb-planner-actions { display: flex; align-items: center; gap: 8px; }
 
 // Phones: show "Your budgets" first and push "Where to cut back" underneath.

@@ -1,20 +1,127 @@
 // BreadBank global styles
 
+// ── Themes ──────────────────────────────────────────────────
+// Every surface/text/accent color in the app resolves through these variables,
+// so a theme is just a different set of values on <body>. The theme is stored
+// per account (app_settings) and applied by src/services/theme.ts.
 :root {
+  // Original (dark purple)
   --bb-bg: #0A0A1B;
   --bb-surface: #0F1030;
   --bb-surface-2: #151540;
   --bb-border: rgba(255, 255, 255, 0.06);
   --bb-border-hover: rgba(255, 255, 255, 0.12);
-  --bb-purple: #6C4ED4;
-  --bb-purple-light: #8B6FEC;
-  --bb-pink: #E040FB;
+  --bb-accent: #6C4ED4;
+  --bb-accent-light: #8B6FEC;
+  --bb-accent-2: #E040FB;
+  --bb-on-accent: #ffffff;
+  --bb-accent-rgb: 108, 78, 212;
+  --bb-accent2-rgb: 236, 64, 251;
   --bb-text: #ffffff;
+  --bb-text-soft: #B9B9D8;
   --bb-text-dim: #6E6E9A;
-  --bb-text-muted: #3D3D5C;
+  --bb-text-muted: #4D4D70;
+  --bb-grad-deep-a: #2D1A6E;
+  --bb-grad-deep-b: #1A1040;
+  // Legacy aliases still referenced in a few places
+  --bb-purple: var(--bb-accent);
+  --bb-purple-light: var(--bb-accent-light);
+  --bb-pink: var(--bb-accent-2);
   --bb-green: #22C55E;
   --bb-red: #EF4444;
   --bb-yellow: #F59E0B;
+}
+
+// Black — pure monochrome dark mode.
+body.theme-black {
+  --bb-bg: #0F0F0E; --bb-surface: #1C1C1A; --bb-surface-2: #262624;
+  --bb-border: rgba(255, 255, 255, 0.09); --bb-border-hover: rgba(255, 255, 255, 0.20);
+  --bb-accent: #4A4A46; --bb-accent-light: #8A8A84; --bb-accent-2: #6E6E68;
+  --bb-on-accent: #F2F2EF; --bb-accent-rgb: 138, 138, 132; --bb-accent2-rgb: 110, 110, 104;
+  --bb-text: #F2F2EF; --bb-text-soft: #C9C9C4; --bb-text-dim: #8A8A84; --bb-text-muted: #5A5A55;
+  --bb-grad-deep-a: #232320; --bb-grad-deep-b: #161614;
+}
+
+// Midnight Blue — deep navy dark mode.
+body.theme-midnight {
+  --bb-bg: #0B1220; --bb-surface: #121F38; --bb-surface-2: #1B2C4F;
+  --bb-border: rgba(122, 162, 255, 0.12); --bb-border-hover: rgba(122, 162, 255, 0.30);
+  --bb-accent: #4C7DFF; --bb-accent-light: #7AA2FF; --bb-accent-2: #38BDF8;
+  --bb-on-accent: #071021; --bb-accent-rgb: 76, 125, 255; --bb-accent2-rgb: 56, 189, 248;
+  --bb-text: #EFF3FA; --bb-text-soft: #C3CDE3; --bb-text-dim: #8493B4; --bb-text-muted: #55617E;
+  --bb-grad-deep-a: #1B2E5C; --bb-grad-deep-b: #0E1834;
+}
+
+// Black & Gold.
+body.theme-gold {
+  --bb-bg: #121110; --bb-surface: #1E1B16; --bb-surface-2: #2A251C;
+  --bb-border: rgba(201, 162, 39, 0.16); --bb-border-hover: rgba(201, 162, 39, 0.36);
+  --bb-accent: #C9A227; --bb-accent-light: #D9B54A; --bb-accent-2: #8A6C1D;
+  --bb-on-accent: #171204; --bb-accent-rgb: 201, 162, 39; --bb-accent2-rgb: 138, 108, 29;
+  --bb-text: #F2EFE6; --bb-text-soft: #CFC8B4; --bb-text-dim: #948C74; --bb-text-muted: #5E5945;
+  --bb-grad-deep-a: #2C2410; --bb-grad-deep-b: #191307;
+}
+
+// White — clean light mode: borderless cards separated by fill + soft shadow.
+body.theme-light {
+  --bb-bg: #FFFFFF; --bb-surface: #F5F5F4; --bb-surface-2: #ECECEA;
+  --bb-border: #E7E7E4; --bb-border-hover: #C9C9C4;
+  --bb-accent: #1A1A18; --bb-accent-light: #1A1A18; --bb-accent-2: #B08D2E;
+  --bb-on-accent: #FFFFFF; --bb-accent-rgb: 26, 26, 24; --bb-accent2-rgb: 176, 141, 46;
+  --bb-text: #1A1A18; --bb-text-soft: #2E2E2B; --bb-text-dim: #6B6B68; --bb-text-muted: #9A9A96;
+  --bb-grad-deep-a: #EFEFED; --bb-grad-deep-b: #F8F8F7;
+}
+
+// Brown — earthy light theme.
+body.theme-brown {
+  --bb-bg: #F7F1EA; --bb-surface: #E9DDCC; --bb-surface-2: #DCCCB4;
+  --bb-border: transparent; --bb-border-hover: rgba(111, 78, 55, 0.30);
+  --bb-accent: #6F4E37; --bb-accent-light: #5D3F2B; --bb-accent-2: #A67C52;
+  --bb-on-accent: #FFF8F0; --bb-accent-rgb: 111, 78, 55; --bb-accent2-rgb: 166, 124, 82;
+  --bb-text: #171310; --bb-text-soft: #262019; --bb-text-dim: #3F3529; --bb-text-muted: #5C5045;
+  --bb-grad-deep-a: #E2D2BC; --bb-grad-deep-b: #F0E6D6;
+}
+
+// Shared light-mode adjustments: readable Quasar dark widgets, and card depth
+// from soft shadows instead of borders (the requested clean look).
+body.theme-light, body.theme-brown {
+  color-scheme: light;
+  .q-field--dark .q-field__native, .q-field--dark .q-field__label,
+  .q-field--dark .q-field__prefix, .q-field--dark input,
+  .q-field--dark .q-select__dropdown-icon { color: var(--bb-text) !important; }
+  .q-field--dark .q-field__control:before { border-color: var(--bb-border-hover) !important; }
+  .q-menu--dark, .q-card--dark { background: var(--bb-surface) !important; color: var(--bb-text) !important; }
+  ::-webkit-scrollbar-thumb { background: #C9BBA8; }
+  .bb-stat, .bb-card, .bb-chart-card, .bb-bg-panel, .bb-ai-card, .bb-set-card,
+  .bb-account-card, .bb-tip-card, .bb-history-item, .bb-tx-table, .bb-subs-list,
+  .bb-anomaly, .bb-no-data, .bb2-hero, .bb2-ai, .bb2-acct, .bb2-next, .bb2-details {
+    box-shadow: 0 1px 2px rgba(30, 20, 10, 0.05), 0 6px 20px rgba(30, 20, 10, 0.07);
+  }
+}
+
+// Dark Sage — deep green gradient backdrop, frosted glass cards, gold accent.
+body.theme-sage {
+  --bb-bg: #0C110E;
+  --bb-surface: rgba(255, 255, 255, 0.055); --bb-surface-2: rgba(255, 255, 255, 0.10);
+  --bb-border: rgba(255, 255, 255, 0.10); --bb-border-hover: rgba(159, 190, 140, 0.35);
+  --bb-accent: #9FBE8C; --bb-accent-light: #B5D2A3; --bb-accent-2: #C9A227;
+  --bb-on-accent: #101B14; --bb-accent-rgb: 159, 190, 140; --bb-accent2-rgb: 201, 162, 39;
+  --bb-text: #F2F4EF; --bb-text-soft: #C8D2C4; --bb-text-dim: #8C9C88; --bb-text-muted: #5C6B59;
+  --bb-grad-deep-a: #24382C; --bb-grad-deep-b: #121D16;
+
+  background: linear-gradient(160deg, #2A4234 0%, #1A2620 38%, #0C110E 75%, #090D0B 100%) fixed !important;
+  .q-page, .bb-layout { background: transparent !important; }
+  .bb-header, .bb-sidebar, .bb-tabbar {
+    background: rgba(10, 17, 13, 0.72) !important;
+    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  }
+  .bb-stat, .bb-card, .bb-chart-card, .bb-bg-panel, .bb-ai-card, .bb-set-card,
+  .bb-account-card, .bb-tip-card, .bb-history-item, .bb-drop-zone, .bb-tx-table,
+  .bb-subs-list, .bb-anomaly, .bb-no-data, .bb-search-box, .bb-theme-card,
+  .bb2-hero, .bb2-ai, .bb2-acct, .bb2-next, .bb2-details, .bb-historical-row,
+  .bb-edit-dialog, .bb-undo-dialog, .bb-credit-card, .bb-planner-card, .bb-forgot-card {
+    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  }
 }
 
 body.body--dark {
@@ -23,7 +130,7 @@ body.body--dark {
 
 ::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: var(--bb-bg); }
-::-webkit-scrollbar-thumb { background: #2D2D50; border-radius: 2px; }
+::-webkit-scrollbar-thumb { background: var(--bb-surface-2); border-radius: 2px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--bb-purple); }
 
 .q-page { background-color: var(--bb-bg); }
@@ -113,51 +220,51 @@ body.body--dark {
 .bb-loading {
   display: flex; flex-direction: column; align-items: center;
   justify-content: center; height: 300px; gap: 16px;
-  color: #6E6E9A; font-size: 14px;
+  color: var(--bb-text-dim); font-size: 14px;
 }
 
 .bb-no-data {
   display: flex; flex-direction: column; align-items: center;
   justify-content: center; padding: 60px 24px; gap: 10px;
-  background: #0F1030; border: 1px solid rgba(255,255,255,0.07);
+  background: var(--bb-surface); border: 1px solid var(--bb-border);
   border-radius: 14px; text-align: center;
 }
-.bb-no-data-title { font-size: 16px; font-weight: 600; color: #ffffff; }
-.bb-no-data-sub   { font-size: 13px; color: #6E6E9A; max-width: 360px; }
+.bb-no-data-title { font-size: 16px; font-weight: 600; color: var(--bb-text); }
+.bb-no-data-sub   { font-size: 13px; color: var(--bb-text-dim); max-width: 360px; }
 
 .bb-stat {
-  background: #0F1030; border: 1px solid rgba(255,255,255,0.07);
+  background: var(--bb-surface); border: 1px solid var(--bb-border);
   border-radius: 14px; padding: 18px; height: 100%;
-  &--gradient { background: linear-gradient(145deg,#2D1A6E,#1A1040); border-color: rgba(108,78,212,0.25); }
+  &--gradient { background: linear-gradient(145deg,var(--bb-grad-deep-a),var(--bb-grad-deep-b)); border-color: rgba(var(--bb-accent-rgb),0.25); }
 }
 .bb-stat-lbl {
   display: flex; align-items: center; gap: 6px;
   font-size: 10px; font-weight: 600; letter-spacing: 0.7px;
-  text-transform: uppercase; color: #6E6E9A; margin-bottom: 8px;
+  text-transform: uppercase; color: var(--bb-text-dim); margin-bottom: 8px;
 }
 .bb-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
-.bb-stat-val { font-size: 22px; font-weight: 700; color: #ffffff; letter-spacing: -0.5px; margin-bottom: 6px; }
+.bb-stat-val { font-size: 22px; font-weight: 700; color: var(--bb-text); letter-spacing: -0.5px; margin-bottom: 6px; }
 .bb-stat-row { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
-.bb-stat-cmp { font-size: 11px; color: #6E6E9A; }
+.bb-stat-cmp { font-size: 11px; color: var(--bb-text-dim); }
 
-.bb-chart-card { background: #0F1030; border: 1px solid rgba(255,255,255,0.07); border-radius: 14px; padding: 20px; }
+.bb-chart-card { background: var(--bb-surface); border: 1px solid var(--bb-border); border-radius: 14px; padding: 20px; }
 .bb-chart-hdr  { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 4px; }
-.bb-chart-title { font-size: 14px; font-weight: 600; color: #ffffff; margin-bottom: 2px; }
-.bb-chart-sub   { font-size: 12px; color: #6E6E9A; }
+.bb-chart-title { font-size: 14px; font-weight: 600; color: var(--bb-text); margin-bottom: 2px; }
+.bb-chart-sub   { font-size: 12px; color: var(--bb-text-dim); }
 
 .apexcharts-tooltip {
-  background: #1A1A3E !important;
+  background: var(--bb-surface-2) !important;
   border: 1px solid var(--bb-border) !important;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4) !important;
 }
 
 .apexcharts-tooltip-title {
-  background: #22224A !important;
+  background: var(--bb-surface-2) !important;
   border-bottom: 1px solid var(--bb-border) !important;
   color: var(--bb-text) !important;
 }
 
 .apexcharts-menu {
-  background: #1A1A3E !important;
+  background: var(--bb-surface-2) !important;
   border: 1px solid var(--bb-border) !important;
 }

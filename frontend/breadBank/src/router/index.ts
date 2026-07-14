@@ -38,6 +38,8 @@ export default defineRouter(function (/* { store, ssrContext } */) {
     const isAuth = auth.isAuthenticated();
 
     if (to.path.startsWith('/app') && !isAuth) {
+      // Clear any expired-token remnants so the login page starts clean.
+      auth.logout();
       return next('/login');
     }
 

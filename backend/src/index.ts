@@ -21,6 +21,7 @@ import plaidRouter       from './routes/plaid';
 import budgetsRouter     from './routes/budgets';
 import goalsRouter       from './routes/goals';
 import calendarRouter    from './routes/calendar';
+import settingsRouter    from './routes/settings';
 
 dotenv.config();
 
@@ -71,6 +72,7 @@ app.use('/api/plaid',        requireAuth, plaidRouter);
 app.use('/api/budgets',      requireAuth, budgetsRouter);
 app.use('/api/goals',        requireAuth, goalsRouter);
 app.use('/api/calendar',     requireAuth, calendarRouter);
+app.use('/api/settings',     requireAuth, settingsRouter);
 
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });

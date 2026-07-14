@@ -36,7 +36,7 @@
         </div>
         <div class="col-6 col-md-4">
           <div class="bb-stat">
-            <div class="bb-stat-lbl"><span class="bb-dot" style="background:#6C4ED4"></span>UPCOMING (THIS VIEW)</div>
+            <div class="bb-stat-lbl"><span class="bb-dot" style="background: var(--bb-accent)"></span>UPCOMING (THIS VIEW)</div>
             <div class="bb-stat-val">{{ fmt(data.summary.totalUpcoming) }}</div>
             <div class="bb-stat-row"><span class="bb-stat-cmp">{{ upcomingCount }} upcoming bill{{ upcomingCount === 1 ? '' : 's' }}</span></div>
           </div>
@@ -55,11 +55,11 @@
         <div class="col-12 col-md-8">
           <div class="bb-bg-panel">
             <div class="bb-cal-hdr">
-              <q-btn flat round dense icon="chevron_left" size="sm" style="color:#9090B8" @click="shiftMonth(-1)" />
+              <q-btn flat round dense icon="chevron_left" size="sm" style="color: var(--bb-text-soft)" @click="shiftMonth(-1)" />
               <span class="bb-cal-title">{{ monthTitle }}</span>
-              <q-btn flat round dense icon="chevron_right" size="sm" style="color:#9090B8" @click="shiftMonth(1)" />
+              <q-btn flat round dense icon="chevron_right" size="sm" style="color: var(--bb-text-soft)" @click="shiftMonth(1)" />
               <q-space />
-              <q-btn flat dense no-caps size="sm" label="Today" style="color:#8B6FEC" @click="goToday" />
+              <q-btn flat dense no-caps size="sm" label="Today" style="color: var(--bb-accent-light)" @click="goToday" />
             </div>
 
             <div class="bb-cal-weekdays">
@@ -91,7 +91,7 @@
         <div class="col-12 col-md-4">
           <div class="bb-bg-panel">
             <div class="bb-bg-panel-hdr">
-              <q-icon name="event" size="18px" style="color:#8B6FEC" />
+              <q-icon name="event" size="18px" style="color: var(--bb-accent-light)" />
               <span>{{ selectedLabel }}</span>
             </div>
             <div v-if="selectedBills.length === 0" class="bb-bg-empty">Nothing due this day.</div>
@@ -118,7 +118,7 @@
       <!-- Upcoming list -->
       <div class="bb-bg-panel q-mt-md">
         <div class="bb-bg-panel-hdr">
-          <q-icon name="upcoming" size="18px" style="color:#8B6FEC" />
+          <q-icon name="upcoming" size="18px" style="color: var(--bb-accent-light)" />
           <span>Upcoming</span>
         </div>
         <div v-if="upcomingBills.length === 0" class="bb-bg-empty">No upcoming bills in this view.</div>
@@ -288,37 +288,37 @@ onMounted(load);
 </script>
 
 <style lang="scss">
-.bb-bills { background-color: #0A0A1B; min-height: 100vh; }
+.bb-bills { background-color: var(--bb-bg); min-height: 100vh; }
 
 // Reuse panel styling from elsewhere, defined locally so the page stands alone.
-.bb-bg-panel { background: #0F1030; border: 1px solid rgba(255,255,255,0.07); border-radius: 14px; padding: 20px; }
+.bb-bg-panel { background: var(--bb-surface); border: 1px solid var(--bb-border); border-radius: 14px; padding: 20px; }
 .bb-bg-panel-hdr {
   display: flex; align-items: center; gap: 8px; margin-bottom: 16px;
-  font-size: 14px; font-weight: 600; color: #ffffff;
+  font-size: 14px; font-weight: 600; color: var(--bb-text);
 }
-.bb-bg-empty { color: #6E6E9A; font-size: 13px; padding: 8px 0; }
+.bb-bg-empty { color: var(--bb-text-dim); font-size: 13px; padding: 8px 0; }
 
 // Calendar
 .bb-cal-hdr { display: flex; align-items: center; gap: 6px; margin-bottom: 14px; }
-.bb-cal-title { font-size: 15px; font-weight: 700; color: #F8FAFF; min-width: 150px; text-align: center; }
+.bb-cal-title { font-size: 15px; font-weight: 700; color: var(--bb-text); min-width: 150px; text-align: center; }
 .bb-cal-weekdays {
   display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; margin-bottom: 6px;
-  font-size: 10px; font-weight: 600; letter-spacing: 0.5px; color: #4D4D70; text-transform: uppercase; text-align: center;
+  font-size: 10px; font-weight: 600; letter-spacing: 0.5px; color: var(--bb-text-muted); text-transform: uppercase; text-align: center;
 }
 .bb-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
 .bb-cal-cell {
   position: relative; min-height: 64px; padding: 6px;
   display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
-  background: #0A0A1B; border: 1px solid rgba(255,255,255,0.05); border-radius: 9px;
+  background: var(--bb-bg); border: 1px solid var(--bb-border); border-radius: 9px;
   cursor: pointer; transition: border-color 0.15s, background 0.15s;
-  &:hover { border-color: rgba(139,111,236,0.5); }
+  &:hover { border-color: rgba(var(--bb-accent-rgb),0.5); }
   &.is-out { opacity: 0.4; }
-  &.is-today { border-color: rgba(139,111,236,0.7); }
-  &.is-selected { background: rgba(108,78,212,0.18); border-color: #8B6FEC; }
-  &.has-bills .bb-cal-day { color: #F8FAFF; }
+  &.is-today { border-color: rgba(var(--bb-accent-rgb),0.7); }
+  &.is-selected { background: rgba(var(--bb-accent-rgb),0.18); border-color: var(--bb-accent-light); }
+  &.has-bills .bb-cal-day { color: var(--bb-text); }
 }
-.bb-cal-day { font-size: 12px; font-weight: 600; color: #9090B8; }
-.bb-cal-amt { font-size: 10px; font-weight: 700; color: #C9B6FF; }
+.bb-cal-day { font-size: 12px; font-weight: 600; color: var(--bb-text-soft); }
+.bb-cal-amt { font-size: 10px; font-weight: 700; color: var(--bb-text-soft); }
 .bb-cal-dots { display: flex; gap: 3px; margin-top: auto; }
 .bb-cal-dot { width: 6px; height: 6px; border-radius: 50%; }
 
@@ -326,12 +326,12 @@ onMounted(load);
 .bb-bill-list { display: flex; flex-direction: column; gap: 10px; }
 .bb-bill-row { display: flex; align-items: center; gap: 12px; }
 .bb-bill-date { width: 38px; flex-shrink: 0; text-align: center; }
-.bb-bill-date-d { font-size: 16px; font-weight: 800; color: #F8FAFF; line-height: 1; }
-.bb-bill-date-m { font-size: 10px; text-transform: uppercase; color: #6E6E9A; }
+.bb-bill-date-d { font-size: 16px; font-weight: 800; color: var(--bb-text); line-height: 1; }
+.bb-bill-date-m { font-size: 10px; text-transform: uppercase; color: var(--bb-text-dim); }
 .bb-bill-icon { width: 32px; height: 32px; border-radius: 9px; display: grid; place-items: center; flex-shrink: 0; }
 .bb-bill-main { flex: 1; min-width: 0; }
-.bb-bill-name { font-size: 13px; font-weight: 600; color: #F8FAFF; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.bb-bill-sub { font-size: 11px; color: #6E6E9A; text-transform: capitalize; }
+.bb-bill-name { font-size: 13px; font-weight: 600; color: var(--bb-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bb-bill-sub { font-size: 11px; color: var(--bb-text-dim); text-transform: capitalize; }
 .bb-bill-badge { font-size: 9px; }
-.bb-bill-amt { font-size: 13px; font-weight: 700; color: #F8FAFF; white-space: nowrap; }
+.bb-bill-amt { font-size: 13px; font-weight: 700; color: var(--bb-text); white-space: nowrap; }
 </style>

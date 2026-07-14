@@ -12,7 +12,7 @@
       <div class="row items-center q-gutter-sm">
         <q-btn
           no-caps flat dense icon="explore" label="Take a tour"
-          style="color:#8B6FEC"
+          style="color: var(--bb-accent-light)"
           @click="startTour"
         >
           <q-tooltip>A quick guided walkthrough</q-tooltip>
@@ -20,7 +20,7 @@
         <q-btn
           flat round dense
           :icon="hideAmounts ? 'visibility_off' : 'visibility'"
-          style="color:#8B6FEC"
+          style="color: var(--bb-accent-light)"
           aria-label="Toggle amount visibility"
           @click="toggleHideAmounts"
         >
@@ -30,13 +30,13 @@
           no-caps unelevated icon="sync" label="Sync"
           :loading="syncing"
           @click="syncBank"
-          style="background:rgba(108,78,212,0.15);color:#8B6FEC;border-radius:8px"
+          style="background:rgba(var(--bb-accent-rgb),0.15);color: var(--bb-accent-light);border-radius:8px"
         />
         <q-btn
           no-caps unelevated icon="account_balance" label="Connect bank"
           :loading="connecting"
           @click="connectBank"
-          style="background:linear-gradient(135deg,#6C4ED4,#E040FB);color:#fff;border-radius:8px"
+          style="background:linear-gradient(135deg,var(--bb-accent),var(--bb-accent-2));color:var(--bb-on-accent);border-radius:8px"
         />
       </div>
     </div>
@@ -99,7 +99,7 @@
                 :loading="aiLoading"
                 :label="aiSummary ? 'Refresh' : 'Generate'"
                 icon="refresh"
-                style="color:#8B6FEC; font-size:11px"
+                style="color: var(--bb-accent-light); font-size:11px"
                 @click="loadAiSummary"
               />
             </div>
@@ -124,7 +124,7 @@
             </div>
             <ul v-if="aiSuggestions.length" class="bb-suggestions">
               <li v-for="(s, i) in aiSuggestions" :key="i">
-                <q-icon name="arrow_right" size="14px" style="color:#6C4ED4;flex-shrink:0" />
+                <q-icon name="arrow_right" size="14px" style="color: var(--bb-accent);flex-shrink:0" />
                 {{ s }}
               </li>
             </ul>
@@ -190,7 +190,7 @@
         <div class="col-6 col-md-3">
           <div class="bb-stat">
             <div class="bb-stat-lbl">
-              <span class="bb-dot" style="background:#6C4ED4"></span>
+              <span class="bb-dot" style="background: var(--bb-accent)"></span>
               MONTHLY INCOME
             </div>
             <div class="bb-stat-val">{{ money(dash?.totalIncome ?? 0) }}</div>
@@ -298,11 +298,11 @@
 
       <!-- Empty state — only when there's no data at all -->
       <div v-if="!hasAnyData" class="bb-no-data">
-        <q-icon name="upload_file" size="48px" style="color:#6C4ED4;opacity:0.4" />
+        <q-icon name="upload_file" size="48px" style="color: var(--bb-accent);opacity:0.4" />
         <div class="bb-no-data-title">No transactions yet</div>
         <div class="bb-no-data-sub">Upload a CSV from Wells Fargo, Apple Card, or Discover — or connect a bank — to get started</div>
         <q-btn no-caps unelevated label="Upload your first statement" to="/app/upload"
-          style="background:linear-gradient(135deg,#6C4ED4,#E040FB);color:#fff;border-radius:8px;margin-top:8px" />
+          style="background:linear-gradient(135deg,var(--bb-accent),var(--bb-accent-2));color:var(--bb-on-accent);border-radius:8px;margin-top:8px" />
       </div>
 
       <!-- Charts -->
@@ -316,11 +316,11 @@
                 <div class="bb-chart-title">Spending by Category</div>
                 <div class="bb-chart-sub">This month's breakdown</div>
               </div>
-              <q-btn flat round dense icon="more_vert" size="sm" style="color:#6E6E9A" />
+              <q-btn flat round dense icon="more_vert" size="sm" style="color: var(--bb-text-dim)" />
             </div>
             <VueApexCharts v-if="hasCategoryData" :key="`cat-${hideAmounts}`" type="bar" height="280" :options="categoryOpts" :series="categorySeries" />
             <div v-else class="bb-chart-empty">
-              <q-icon name="pie_chart" size="34px" style="color:#6C4ED4;opacity:0.4" />
+              <q-icon name="pie_chart" size="34px" style="color: var(--bb-accent);opacity:0.4" />
               <span>No spending recorded yet this month.</span>
             </div>
           </div>
@@ -334,7 +334,7 @@
                 <div class="bb-chart-title">Monthly Spending Trend</div>
                 <div class="bb-chart-sub">Last 6 months</div>
               </div>
-              <q-btn flat round dense icon="more_vert" size="sm" style="color:#6E6E9A" />
+              <q-btn flat round dense icon="more_vert" size="sm" style="color: var(--bb-text-dim)" />
             </div>
             <VueApexCharts :key="`trend-${hideAmounts}`" type="area" height="280" :options="trendOpts" :series="trendSeries" />
           </div>
@@ -354,6 +354,7 @@ import { ref, computed, onMounted } from 'vue';
 import { useQuasar } from 'quasar';
 import VueApexCharts from 'vue3-apexcharts';
 import type { ApexOptions } from 'apexcharts';
+import { themeColor } from 'src/services/theme';
 import { api, type DashboardData, type Account } from 'src/services/api';
 import { auth } from 'src/services/auth';
 import TourGuide, { type TourStep } from 'src/components/TourGuide.vue';
@@ -714,7 +715,7 @@ const trendYMax = computed(() => {
 
 const trendOpts = computed<ApexOptions>(() => ({
   chart: { type: 'area', background: 'transparent', toolbar: { show: false }, foreColor: '#6E6E9A' },
-  colors: ['#6C4ED4', '#22C55E'],
+  colors: [themeColor('--bb-accent', '#6C4ED4'), '#22C55E'],
   fill: { type: 'gradient', gradient: { shadeIntensity: 1, opacityFrom: 0.25, opacityTo: 0.02 } },
   stroke: { curve: 'smooth', width: 2 },
   dataLabels: { enabled: false },
@@ -737,7 +738,7 @@ const trendOpts = computed<ApexOptions>(() => ({
 const categoryOpts = computed<ApexOptions>(() => ({
   chart: { type: 'bar', background: 'transparent', toolbar: { show: false }, foreColor: '#6E6E9A' },
   plotOptions: { bar: { horizontal: true, borderRadius: 4, borderRadiusApplication: 'end', barHeight: '60%' } },
-  colors: ['#6C4ED4'],
+  colors: [themeColor('--bb-accent', '#6C4ED4')],
   dataLabels: {
     enabled: true,
     formatter: (val: number) => hideAmounts.value ? '••••' : fmt(val),
@@ -755,33 +756,33 @@ const categoryOpts = computed<ApexOptions>(() => ({
 </script>
 
 <style lang="scss">
-.bb-dash { background-color: #0A0A1B; min-height: 100vh; }
+.bb-dash { background-color: var(--bb-bg); min-height: 100vh; }
 
 /* ── Per-card debt + utilization inside the Total Debt tile ──── */
 .bb-debt-util { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
 .bb-du-row { cursor: pointer; border-radius: 8px; padding: 4px; margin: -4px; transition: background 0.15s ease; }
 .bb-du-row:hover { background: rgba(255,255,255,0.04); }
 .bb-du-line1 { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
-.bb-du-name { font-size: 12px; font-weight: 600; color: #E2E2FF; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bb-du-name { font-size: 12px; font-weight: 600; color: var(--bb-text-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bb-du-pct { font-size: 13px; font-weight: 700; flex-shrink: 0; }
 .bb-du-pct.is-good { color: #22C55E; }
 .bb-du-pct.is-near { color: #F59E0B; }
 .bb-du-pct.is-over { color: #EF4444; }
-.bb-du-set { font-size: 11px; font-weight: 600; color: #8B6FEC; flex-shrink: 0; }
+.bb-du-set { font-size: 11px; font-weight: 600; color: var(--bb-accent-light); flex-shrink: 0; }
 .bb-du-bar-wrap { position: relative; height: 6px; background: rgba(255,255,255,0.08); border-radius: 999px; margin: 5px 0 3px; }
 .bb-du-bar { height: 100%; border-radius: 999px; transition: width 0.3s ease; }
 .bb-du-bar.is-good { background: #22C55E; }
 .bb-du-bar.is-near { background: #F59E0B; }
 .bb-du-bar.is-over { background: #EF4444; }
 .bb-du-mark { position: absolute; top: -2px; bottom: -2px; left: 30%; width: 2px; background: rgba(255,255,255,0.4); }
-.bb-du-amt { font-size: 11px; color: #8F8FB5; font-variant-numeric: tabular-nums; }
+.bb-du-amt { font-size: 11px; color: var(--bb-text-soft); font-variant-numeric: tabular-nums; }
 .bb-du-warn { font-size: 10.5px; margin-top: 2px; line-height: 1.35; }
 .bb-du-warn.is-near { color: #F59E0B; }
 .bb-du-warn.is-over { color: #EF4444; }
 
 /* Refund note on the (dark gradient) Monthly Spending tile — brighter than the
    default muted caption so it reads against the purple background. */
-.bb-refund-note { margin-top: 6px; color: rgba(255,255,255,0.82) !important; font-weight: 600; }
+.bb-refund-note { margin-top: 6px; color: var(--bb-text) !important; font-weight: 600; }
 
 /* Unusual-spending alerts */
 .bb-anomalies { display: flex; flex-direction: column; gap: 10px; }
@@ -791,73 +792,73 @@ const categoryOpts = computed<ApexOptions>(() => ({
   border-radius: 12px; padding: 12px 16px;
 }
 .bb-anomaly-icon { width: 32px; height: 32px; border-radius: 9px; display: grid; place-items: center; flex-shrink: 0; }
-.bb-anomaly-text { flex: 1; min-width: 0; font-size: 13px; color: #E6E6F5; }
-.bb-anomaly-text strong { color: #ffffff; font-weight: 700; }
-.bb-anomaly-sub { display: block; font-size: 11px; color: #9090B8; margin-top: 2px; }
+.bb-anomaly-text { flex: 1; min-width: 0; font-size: 13px; color: var(--bb-text-soft); }
+.bb-anomaly-text strong { color: var(--bb-text); font-weight: 700; }
+.bb-anomaly-sub { display: block; font-size: 11px; color: var(--bb-text-soft); margin-top: 2px; }
 .bb-anomaly-link {
   font-size: 12px; font-weight: 600; color: #F59E0B; text-decoration: none; white-space: nowrap;
   &:hover { color: #FBBF24; }
 }
-.bb-anomaly-close { color: #6E6E9A; flex-shrink: 0; &:hover { color: #F8FAFF; } }
+.bb-anomaly-close { color: var(--bb-text-dim); flex-shrink: 0; &:hover { color: var(--bb-text); } }
 
 .bb-chart-empty {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
-  height: 280px; gap: 12px; color: #6E6E9A; font-size: 13px; text-align: center;
+  height: 280px; gap: 12px; color: var(--bb-text-dim); font-size: 13px; text-align: center;
 }
 
 .bb-ai-card {
-  background: #0F1030; border: 1px solid rgba(255,255,255,0.07);
+  background: var(--bb-surface); border: 1px solid var(--bb-border);
   border-radius: 14px; padding: 18px 20px; height: 100%;
 }
-.bb-suggestions-card { border-color: rgba(108,78,212,0.2); }
+.bb-suggestions-card { border-color: rgba(var(--bb-accent-rgb),0.2); }
 
 .bb-ai-header {
   display: flex; align-items: center; gap: 8px; margin-bottom: 12px;
 }
 .bb-ai-icon {
   width: 26px; height: 26px; border-radius: 6px;
-  background: linear-gradient(135deg,#6C4ED4,#8B6FEC);
+  background: linear-gradient(135deg,var(--bb-accent),var(--bb-accent-light));
   display: flex; align-items: center; justify-content: center; flex-shrink: 0;
-  &--pink { background: linear-gradient(135deg,#E040FB,#6C4ED4); }
+  &--pink { background: linear-gradient(135deg,var(--bb-accent-2),var(--bb-accent)); }
 }
-.bb-ai-label  { font-size: 13px; font-weight: 600; color: #ffffff; }
-.bb-ai-badge  { background: rgba(108,78,212,0.2) !important; color: #8B6FEC !important; font-size: 10px !important; }
-.bb-ai-text   { font-size: 13px; color: #9090B8; line-height: 1.6; margin: 0; strong { color: #ffffff; } }
+.bb-ai-label  { font-size: 13px; font-weight: 600; color: var(--bb-text); }
+.bb-ai-badge  { background: rgba(var(--bb-accent-rgb),0.2) !important; color: var(--bb-accent-light) !important; font-size: 10px !important; }
+.bb-ai-text   { font-size: 13px; color: var(--bb-text-soft); line-height: 1.6; margin: 0; strong { color: var(--bb-text); } }
 .bb-ai-placeholder { font-style: italic; opacity: 0.5; }
 
 .bb-suggestions {
   list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 10px;
-  li { display: flex; align-items: flex-start; gap: 6px; font-size: 13px; color: #9090B8; line-height: 1.5; }
+  li { display: flex; align-items: flex-start; gap: 6px; font-size: 13px; color: var(--bb-text-soft); line-height: 1.5; }
 }
 
 .bb-acct-breakdown { display: flex; flex-direction: column; gap: 4px; margin-top: 2px; }
 .bb-acct-row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
 .bb-acct-name {
-  font-size: 11px; color: #6E6E9A;
+  font-size: 11px; color: var(--bb-text-dim);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.bb-acct-bal { font-size: 11px; font-weight: 600; color: #C8C8E0; flex-shrink: 0; }
+.bb-acct-bal { font-size: 11px; font-weight: 600; color: var(--bb-text-soft); flex-shrink: 0; }
 
 .bb-debt-breakdown { flex-wrap: wrap; gap: 4px 10px; }
 .bb-debt-item {
   font-size: 11px;
-  color: #6E6E9A;
+  color: var(--bb-text-dim);
   strong { color: #EF4444; font-weight: 600; }
 }
 
 .bb-badge-up      { font-size: 10px; font-weight: 600; background: rgba(34,197,94,0.15);  color: #22C55E; padding: 2px 7px; border-radius: 20px; }
 .bb-badge-down-good { font-size: 10px; font-weight: 600; background: rgba(34,197,94,0.15);  color: #22C55E; padding: 2px 7px; border-radius: 20px; }
 .bb-badge-up-bad  { font-size: 10px; font-weight: 600; background: rgba(239,68,68,0.15);   color: #EF4444; padding: 2px 7px; border-radius: 20px; }
-.bb-badge-neutral { font-size: 10px; font-weight: 600; background: rgba(110,110,154,0.15); color: #6E6E9A; padding: 2px 7px; border-radius: 20px; }
+.bb-badge-neutral { font-size: 10px; font-weight: 600; background: rgba(110,110,154,0.15); color: var(--bb-text-dim); padding: 2px 7px; border-radius: 20px; }
 
 .bb-savings-rate { font-size: 11px; font-weight: 600; color: #22C55E; }
 .bb-savings-rate.is-negative { color: #EF4444; }
 .bb-savings-bar-wrap { height: 4px; background: rgba(255,255,255,0.06); border-radius: 2px; overflow: hidden; margin-top: 4px; }
-.bb-savings-bar { height: 100%; background: linear-gradient(90deg,#6C4ED4,#22C55E); border-radius: 2px; transition: width 0.6s ease; }
+.bb-savings-bar { height: 100%; background: linear-gradient(90deg,var(--bb-accent),#22C55E); border-radius: 2px; transition: width 0.6s ease; }
 .bb-savings-bar.is-negative { background: linear-gradient(90deg,#F97316,#EF4444); }
 .bb-unallocated {
   display: inline-block; margin-top: 8px; font-size: 11px; font-weight: 600;
-  color: #8B6FEC; text-decoration: none;
-  &:hover { color: #B79DFF; }
+  color: var(--bb-accent-light); text-decoration: none;
+  &:hover { color: var(--bb-accent-light); }
 }
 </style>

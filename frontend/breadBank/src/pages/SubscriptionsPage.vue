@@ -47,7 +47,7 @@
 
       <!-- Empty -->
       <div v-if="subscriptions.length === 0" class="bb-empty">
-        <q-icon name="autorenew" size="48px" style="color:#6C4ED4" />
+        <q-icon name="autorenew" size="48px" style="color: var(--bb-accent)" />
         <div class="bb-empty-title">No recurring charges detected</div>
         <div class="bb-empty-sub">
           We look for merchants that bill you on a consistent schedule and amount. Upload more
@@ -139,24 +139,24 @@ onMounted(loadSubscriptions);
 </script>
 
 <style lang="scss">
-.bb-subs { background-color: #0A0A1B; min-height: 100vh; }
+.bb-subs { background-color: var(--bb-bg); min-height: 100vh; }
 .bb-page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
 .bb-page-title { font-size: 28px; font-weight: 700; }
-.bb-page-sub { color: #8F8FB5; margin-top: 8px; }
-.bb-rescan-btn { color: #8B6FEC; }
+.bb-page-sub { color: var(--bb-text-soft); margin-top: 8px; }
+.bb-rescan-btn { color: var(--bb-accent-light); }
 
-.bb-loading { display: flex; align-items: center; gap: 12px; min-height: 220px; color: #C6C6E5; }
+.bb-loading { display: flex; align-items: center; gap: 12px; min-height: 220px; color: var(--bb-text-soft); }
 
-.bb-sum-card { background: #11112A; border: 1px solid rgba(255,255,255,0.06); border-radius: 16px; padding: 20px; height: 100%; }
-.bb-sum-card--accent { background: linear-gradient(145deg, #2D1A6E, #1A1040); border-color: rgba(108,78,212,0.25); }
-.bb-sum-lbl { font-size: 11px; font-weight: 600; letter-spacing: 0.7px; text-transform: uppercase; color: #8F8FB5; margin-bottom: 10px; }
-.bb-sum-val { font-size: 26px; font-weight: 700; color: #F8FAFF; }
+.bb-sum-card { background: var(--bb-surface-2); border: 1px solid var(--bb-border); border-radius: 16px; padding: 20px; height: 100%; }
+.bb-sum-card--accent { background: linear-gradient(145deg, var(--bb-grad-deep-a), var(--bb-grad-deep-b)); border-color: rgba(var(--bb-accent-rgb),0.25); }
+.bb-sum-lbl { font-size: 11px; font-weight: 600; letter-spacing: 0.7px; text-transform: uppercase; color: var(--bb-text-soft); margin-bottom: 10px; }
+.bb-sum-val { font-size: 26px; font-weight: 700; color: var(--bb-text); }
 
-.bb-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; min-height: 240px; text-align: center; background: #11112A; border: 1px dashed rgba(108,78,212,0.3); border-radius: 18px; padding: 40px; }
+.bb-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; min-height: 240px; text-align: center; background: var(--bb-surface-2); border: 1px dashed rgba(var(--bb-accent-rgb),0.3); border-radius: 18px; padding: 40px; }
 .bb-empty-title { font-size: 18px; font-weight: 700; }
-.bb-empty-sub { color: #8F8FB5; max-width: 460px; font-size: 13px; }
+.bb-empty-sub { color: var(--bb-text-soft); max-width: 460px; font-size: 13px; }
 
-.bb-subs-list { background: #11112A; border: 1px solid rgba(255,255,255,0.06); border-radius: 18px; overflow-x: auto; }
+.bb-subs-list { background: var(--bb-surface-2); border: 1px solid var(--bb-border); border-radius: 18px; overflow-x: auto; }
 // Fixed-width columns with a flexible Merchant column. A min-width keeps the
 // columns from crushing into each other — the table scrolls sideways instead.
 .bb-subs-grid { display: flex; align-items: center; gap: 16px; padding: 14px 20px; min-width: 640px; }
@@ -165,22 +165,22 @@ onMounted(loadSubscriptions);
 .bb-sc-typical  { width: 84px;  flex-shrink: 0; }
 .bb-sc-monthly  { width: 90px;  flex-shrink: 0; }
 .bb-sc-next     { width: 104px; flex-shrink: 0; }
-.bb-subs-head { background: #0F0F26; color: #8F8FB5; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; border-bottom: 1px solid rgba(255,255,255,0.06); }
-.bb-sub-row { border-bottom: 1px solid rgba(255,255,255,0.04); }
+.bb-subs-head { background: #0F0F26; color: var(--bb-text-soft); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; border-bottom: 1px solid var(--bb-border); }
+.bb-sub-row { border-bottom: 1px solid var(--bb-border); }
 .bb-sub-row:last-child { border-bottom: none; }
 .bb-num { text-align: right; white-space: nowrap; }
 
 .bb-sub-merchant { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .bb-sub-icon { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; flex-shrink: 0; }
 .bb-sub-merchant-text { min-width: 0; }
-.bb-sub-name { color: #F8FAFF; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.bb-sub-meta { color: #8F8FB5; font-size: 12px; margin-top: 3px; display: flex; align-items: center; gap: 6px; }
+.bb-sub-name { color: var(--bb-text); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bb-sub-meta { color: var(--bb-text-soft); font-size: 12px; margin-top: 3px; display: flex; align-items: center; gap: 6px; }
 .bb-sub-likely { background: rgba(245,158,11,0.16); color: #F59E0B; font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 999px; text-transform: uppercase; letter-spacing: 0.04em; }
 
-.bb-cadence-chip { background: rgba(108,78,212,0.16); color: #8B6FEC; font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: 999px; }
-.bb-sub-amt { color: #C6C6E5; font-weight: 600; }
-.bb-sub-monthly { color: #ffffff; font-weight: 700; }
-.bb-sub-next { color: #8F8FB5; font-size: 13px; }
+.bb-cadence-chip { background: rgba(var(--bb-accent-rgb),0.16); color: var(--bb-accent-light); font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: 999px; }
+.bb-sub-amt { color: var(--bb-text-soft); font-weight: 600; }
+.bb-sub-monthly { color: var(--bb-text); font-weight: 700; }
+.bb-sub-next { color: var(--bb-text-soft); font-size: 13px; }
 
-.bb-disclaimer { color: #6E6E9A; font-size: 12px; margin-top: 16px; line-height: 1.5; }
+.bb-disclaimer { color: var(--bb-text-dim); font-size: 12px; margin-top: 16px; line-height: 1.5; }
 </style>

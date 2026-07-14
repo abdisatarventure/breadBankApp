@@ -16,8 +16,8 @@ $primary: #6C4ED4;
 $secondary: #E040FB;
 $accent: #8B6FEC;
 
-$dark: #0F1030;
-$dark-page: #0A0A1B;
+$dark: var(--bb-surface);
+$dark-page: var(--bb-bg);
 
 $positive: #22C55E;
 $negative: #EF4444;

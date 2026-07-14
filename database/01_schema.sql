@@ -21,6 +21,10 @@ CREATE TABLE users (
     -- question at sign-up and the answer is bcrypt-hashed, never stored plain.
     security_question NVARCHAR(300) NULL,
     security_answer   NVARCHAR(200) NULL,
+    -- Recorded consent to the Privacy Policy (required at sign-up). consent_version
+    -- lets us tell who accepted which revision of the policy.
+    consent_at        DATETIME2 NULL,
+    consent_version   NVARCHAR(20) NULL,
     created_at        DATETIME DEFAULT GETDATE()
 );
 

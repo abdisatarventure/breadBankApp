@@ -4,6 +4,8 @@ import jwt from 'jsonwebtoken';
 import { getPool, sql } from '../config/db';
 import { JWT_SECRET, JWT_EXPIRES } from '../config/auth';
 import { requireAuth, AuthRequest } from '../middleware/auth';
+import { plaid } from '../config/plaid';
+import { decryptSecret } from '../config/crypto';
 import type { ConnectionPool } from 'mssql';
 
 const router = Router();
@@ -11,6 +13,9 @@ const MIN_PASSWORD_LENGTH = 8;
 const BCRYPT_COST = 12;
 // The showcase account the one-click "Demo" login drops anyone into.
 const DEMO_EMAIL = 'test@gmail.com';
+// Version of the Privacy Policy / consent text in effect. Bump when the policy
+// materially changes so we can tell who accepted which version.
+const CONSENT_VERSION = '1.0';
 
 // The starter accounts every new user gets their own private copy of. Kept
 // GENERIC (no bank branding) so a new user isn't greeted by someone else's
@@ -42,14 +47,21 @@ function normalizeAnswer(answer: string): string {
 
 router.post('/register', async (req, res) => {
   try {
-    const { email, password, name, securityQuestion, securityAnswer } = req.body as {
+    const { email, password, name, securityQuestion, securityAnswer, consentAccepted } = req.body as {
       email?: string; password?: string; name?: string;
-      securityQuestion?: string; securityAnswer?: string;
+      securityQuestion?: string; securityAnswer?: string; consentAccepted?: boolean;
     };
     const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
 
     if (!normalizedEmail || !password) {
       res.status(400).json({ error: 'Email and password are required.' });
+      return;
+    }
+
+    // Explicit, recorded consent to the Privacy Policy is required before we
+    // collect or process any of the user's financial data (see CONSENT_VERSION).
+    if (consentAccepted !== true) {
+      res.status(400).json({ error: 'You must accept the Privacy Policy to create an account.' });
       return;
     }
 
@@ -86,10 +98,11 @@ router.post('/register', async (req, res) => {
       .input('name', sql.NVarChar(100), displayName)
       .input('question', sql.NVarChar(300), question || null)
       .input('answerHash', sql.NVarChar(200), answerHash)
+      .input('consentVersion', sql.NVarChar(20), CONSENT_VERSION)
       .query(`
-        INSERT INTO users (email, password, name, security_question, security_answer)
+        INSERT INTO users (email, password, name, security_question, security_answer, consent_at, consent_version)
         OUTPUT INSERTED.id, INSERTED.email, INSERTED.name
-        VALUES (@email, @passwordHash, @name, @question, @answerHash)
+        VALUES (@email, @passwordHash, @name, @question, @answerHash, SYSUTCDATETIME(), @consentVersion)
       `);
 
     const user = result.recordset[0];
@@ -289,6 +302,75 @@ router.put('/me/security', requireAuth, async (req: AuthRequest, res) => {
   } catch (err) {
     console.error('Set security error:', err);
     res.status(500).json({ error: 'Failed to update security question.' });
+  }
+});
+
+// ── Delete my account and all my data (GDPR/CCPA-style erasure) ────────
+// Requires the account password. Best-effort disconnects every linked Plaid
+// item (so Plaid stops sharing data), then purges all of this user's rows in
+// FK-safe order inside a single transaction, and finally the user record.
+router.delete('/me', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const userId = req.userId!;
+    const { password } = req.body as { password?: string };
+    if (!password) {
+      res.status(400).json({ error: 'Your password is required to delete your account.' });
+      return;
+    }
+
+    const pool = getPool();
+    const acct = await pool.request()
+      .input('id', sql.Int, userId)
+      .query('SELECT email, password AS passwordHash FROM users WHERE id = @id');
+    const row = acct.recordset[0] as { email: string; passwordHash: string } | undefined;
+    if (!row) {
+      res.status(404).json({ error: 'Account not found.' });
+      return;
+    }
+    if (row.email === DEMO_EMAIL) {
+      res.status(403).json({ error: 'The demo account cannot be deleted.' });
+      return;
+    }
+    if (!(await bcrypt.compare(password, row.passwordHash))) {
+      res.status(401).json({ error: 'Password is incorrect.' });
+      return;
+    }
+
+    // Tell Plaid to stop sharing this user's bank data. Best-effort: a failed
+    // itemRemove must not block erasure of our own copy.
+    const items = await pool.request()
+      .input('userId', sql.Int, userId)
+      .query('SELECT access_token FROM plaid_items WHERE user_id = @userId');
+    for (const it of items.recordset as { access_token: string }[]) {
+      try { await plaid.itemRemove({ access_token: decryptSecret(it.access_token) }); }
+      catch { /* non-fatal — we still delete our stored copy below */ }
+    }
+
+    // FK-safe delete order: children before parents. All rows scoped to @userId.
+    const tables = [
+      'transactions', 'uploads', 'merchant_rules', 'savings_contributions',
+      'budgets', 'savings_goals', 'accounts', 'categories', 'plaid_items',
+      'ai_usage', 'app_settings',
+    ];
+    const tx = pool.transaction();
+    await tx.begin();
+    try {
+      for (const t of tables) {
+        await tx.request().input('userId', sql.Int, userId)
+          .query(`DELETE FROM ${t} WHERE user_id = @userId`);
+      }
+      await tx.request().input('id', sql.Int, userId)
+        .query('DELETE FROM users WHERE id = @id');
+      await tx.commit();
+    } catch (e) {
+      await tx.rollback();
+      throw e;
+    }
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Delete account error:', err);
+    res.status(500).json({ error: 'Failed to delete account.' });
   }
 });
 

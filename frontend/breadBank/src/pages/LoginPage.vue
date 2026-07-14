@@ -8,7 +8,7 @@
         <div class="bb-boot-inner">
           <div class="bb-boot-logo">
             <div class="bb-boot-icon">
-              <q-icon name="account_balance_wallet" size="30px" color="white" />
+              <img src="icons/icon-128x128.png" alt="BreadBank" style="width:100%;height:100%;object-fit:contain" />
             </div>
             <span class="bb-boot-name">BreadBank</span>
           </div>
@@ -34,7 +34,7 @@
         <div class="bb-art-content">
           <div class="bb-brand">
             <div class="bb-brand-icon">
-              <q-icon name="account_balance_wallet" size="22px" color="white" />
+              <img src="icons/icon-128x128.png" alt="BreadBank" style="width:100%;height:100%;object-fit:contain" />
             </div>
             <span>BreadBank</span>
           </div>
@@ -110,6 +110,9 @@
               <span class="bb-link" @click="router.push('/register')">Create an account</span>
               <span class="bb-link" @click="openForgot">Forgot your password?</span>
             </div>
+            <div class="bb-form-links" style="margin-top:10px">
+              <span class="bb-link" @click="router.push('/privacy')">Privacy Policy</span>
+            </div>
           </q-form>
         </div>
       </div>
@@ -178,7 +181,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { useQuasar } from 'quasar';
 import { auth } from 'src/services/auth';
 
@@ -186,7 +189,16 @@ import { auth } from 'src/services/auth';
 // login shell's staggered entrance. They overlap briefly for a smooth crossfade.
 const booting = ref(true);
 const ready = ref(false);
+const route = useRoute();
+
 onMounted(() => {
+  // Arrived here because the session-expiry watchdog logged the user out —
+  // say so, otherwise the sudden login screen looks like a bug.
+  if (route.query.expired === '1') {
+    setTimeout(() => {
+      $q.notify({ type: 'info', icon: 'schedule', message: 'Your session expired — please sign in again.' });
+    }, 400);
+  }
   const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
   if (reduce) {
     booting.value = false;
@@ -328,7 +340,7 @@ async function handleDemo() {
   justify-content: center;
   padding: 24px;
   background:
-    radial-gradient(1200px 600px at 15% 10%, rgba(108, 78, 212, 0.18), transparent 60%),
+    radial-gradient(1200px 600px at 15% 10%, rgba(var(--bb-accent-rgb), 0.18), transparent 60%),
     radial-gradient(900px 500px at 90% 90%, rgba(224, 64, 251, 0.14), transparent 60%),
     #070714;
 }
@@ -341,7 +353,7 @@ async function handleDemo() {
   border-radius: 24px;
   overflow: hidden;
   background: #0F0F26;
-  border: 1px solid rgba(255, 255, 255, 0.07);
+  border: 1px solid var(--bb-border);
   box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55);
   // Hidden until the boot screen hands off (.bb-app-ready), then it rises in.
   opacity: 0;
@@ -403,7 +415,7 @@ async function handleDemo() {
 .bb-orb--ring {
   width: 360px; height: 360px; top: 50%; left: 50%;
   margin: -180px 0 0 -180px;
-  background: conic-gradient(from 0deg, rgba(108,78,212,0.0), rgba(224,64,251,0.35), rgba(108,78,212,0.0));
+  background: conic-gradient(from 0deg, rgba(var(--bb-accent-rgb),0.0), rgba(224,64,251,0.35), rgba(var(--bb-accent-rgb),0.0));
   filter: blur(30px);
   opacity: 0.5;
   mix-blend-mode: screen;
@@ -430,17 +442,17 @@ async function handleDemo() {
   display: flex;
   align-items: center;
   gap: 12px;
-  span { font-size: 19px; font-weight: 700; color: #ffffff; letter-spacing: -0.2px; }
+  span { font-size: 19px; font-weight: 700; color: var(--bb-text); letter-spacing: -0.2px; }
 }
 .bb-brand-icon {
   width: 40px; height: 40px; flex-shrink: 0;
-  background: linear-gradient(135deg, #6C4ED4, #E040FB);
+  background: transparent;
   border-radius: 12px;
   display: flex; align-items: center; justify-content: center;
-  box-shadow: 0 8px 24px rgba(108, 78, 212, 0.5);
+  box-shadow: 0 8px 24px rgba(var(--bb-accent-rgb), 0.5);
 }
 .bb-art-copy { padding-bottom: 4px; }
-.bb-art-title { font-size: 26px; line-height: 1.25; font-weight: 700; color: #F8FAFF; }
+.bb-art-title { font-size: 26px; line-height: 1.25; font-weight: 700; color: var(--bb-text); }
 .bb-art-sub { margin-top: 10px; font-size: 13px; color: rgba(248, 250, 255, 0.7); max-width: 280px; }
 
 /* ── Form panel ───────────────────────────────────────────── */
@@ -450,12 +462,12 @@ async function handleDemo() {
   align-items: center;
   justify-content: center;
   padding: 40px;
-  background: #0F1030;
+  background: var(--bb-surface);
 }
 .bb-form-inner { width: 100%; max-width: 320px; }
 
-.bb-login-title { font-size: 28px; font-weight: 700; color: #ffffff; }
-.bb-login-sub { font-size: 13px; color: #6E6E9A; margin-top: 6px; }
+.bb-login-title { font-size: 28px; font-weight: 700; color: var(--bb-text); }
+.bb-login-sub { font-size: 13px; color: var(--bb-text-dim); margin-top: 6px; }
 
 // Staggered entrance, kicked off once the boot screen hands off (.bb-app-ready)
 // so everything slides into place together after the preloader.
@@ -493,26 +505,26 @@ async function handleDemo() {
     height: 52px;
     padding: 0 14px;
     background: $field-bg;
-    border: 1px solid rgba(255, 255, 255, 0.10);
+    border: 1px solid var(--bb-border);
     border-radius: 12px;
     overflow: hidden;
     transition: border-color 0.25s ease, box-shadow 0.25s ease;
     // Quasar draws its own underline via ::before/::after — hide it.
     &::before, &::after { display: none; }
   }
-  .q-field__control:hover { border-color: rgba(255, 255, 255, 0.22); }
+  .q-field__control:hover { border-color: var(--bb-border); }
   &.q-field--focused .q-field__control {
-    border-color: #8B6FEC;
-    box-shadow: 0 0 0 3px rgba(139, 111, 236, 0.18);
+    border-color: var(--bb-accent-light);
+    box-shadow: 0 0 0 3px rgba(var(--bb-accent-rgb), 0.18);
   }
 
   // Keep the appended icon flush inside the box (no fixed marginal height).
-  .q-field__marginal { height: auto; color: #6E6E9A; }
+  .q-field__marginal { height: auto; color: var(--bb-text-dim); }
   .q-field__append { padding-left: 8px; }
-  &.q-field--focused .q-field__append .q-icon { color: #8B6FEC; transition: color 0.3s ease; }
+  &.q-field--focused .q-field__append .q-icon { color: var(--bb-accent-light); transition: color 0.3s ease; }
 
-  .q-field__native { color: #F8FAFF; font-size: 14px; }
-  .q-field__native::placeholder { color: #6E6E9A; }
+  .q-field__native { color: var(--bb-text); font-size: 14px; }
+  .q-field__native::placeholder { color: var(--bb-text-dim); }
 
   // Stop Chrome/Safari autofill from painting the field light, and match it to
   // the field colour so the icon area doesn't look like a separate box.
@@ -520,9 +532,9 @@ async function handleDemo() {
   input:-webkit-autofill:hover,
   input:-webkit-autofill:focus,
   input:-webkit-autofill:active {
-    -webkit-text-fill-color: #F8FAFF !important;
+    -webkit-text-fill-color: var(--bb-text) !important;
     -webkit-box-shadow: 0 0 0 1000px $field-bg inset !important;
-    caret-color: #F8FAFF;
+    caret-color: var(--bb-text);
     transition: background-color 9999s ease-out 0s;
   }
 }
@@ -534,16 +546,16 @@ async function handleDemo() {
   font-size: 14px !important;
   font-weight: 600 !important;
   border-radius: 999px !important;
-  color: #ffffff !important;
-  background: linear-gradient(135deg, #6C4ED4, #E040FB) !important;
+  color: var(--bb-text) !important;
+  background: linear-gradient(135deg,var(--bb-accent),var(--bb-accent-2)) !important;
   background-size: 180% 180% !important;
-  box-shadow: 0 8px 24px rgba(108, 78, 212, 0.35);
+  box-shadow: 0 8px 24px rgba(var(--bb-accent-rgb), 0.35);
   transition: transform 0.25s ease, box-shadow 0.25s ease, background-position 0.6s ease;
 
   &:hover {
     transform: translateY(-2px);
     background-position: 100% 100% !important;
-    box-shadow: 0 14px 34px rgba(108, 78, 212, 0.55);
+    box-shadow: 0 14px 34px rgba(var(--bb-accent-rgb), 0.55);
   }
   &:active { transform: translateY(0); }
 }
@@ -552,7 +564,7 @@ async function handleDemo() {
 .bb-demo-divider {
   display: flex; align-items: center; gap: 12px;
   margin: 16px 0 12px;
-  color: #6E6E9A; font-size: 12px;
+  color: var(--bb-text-dim); font-size: 12px;
 }
 .bb-demo-divider::before, .bb-demo-divider::after {
   content: ''; flex: 1; height: 1px; background: rgba(255,255,255,0.12);
@@ -564,11 +576,11 @@ async function handleDemo() {
   font-size: 14px !important;
   font-weight: 600 !important;
   border-radius: 999px !important;
-  color: #C8B8FF !important;
-  border: 1px solid rgba(108, 78, 212, 0.5) !important;
+  color: var(--bb-accent-light) !important;
+  border: 1px solid rgba(var(--bb-accent-rgb), 0.5) !important;
   transition: background 0.2s ease, transform 0.2s ease;
 
-  &:hover { background: rgba(108, 78, 212, 0.12) !important; transform: translateY(-1px); }
+  &:hover { background: rgba(var(--bb-accent-rgb), 0.12) !important; transform: translateY(-1px); }
   &:active { transform: translateY(0); }
 }
 
@@ -581,10 +593,10 @@ async function handleDemo() {
 }
 .bb-link {
   font-size: 12.5px;
-  color: #8B6FEC;
+  color: var(--bb-accent-light);
   cursor: pointer;
   transition: color 0.2s ease;
-  &:hover { color: #E040FB; }
+  &:hover { color: var(--bb-accent-2); }
 }
 
 .bb-error-banner {
@@ -599,16 +611,16 @@ async function handleDemo() {
   width: 360px;
   max-width: 90vw;
   padding: 28px 26px;
-  background: #0F1030 !important;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--bb-surface) !important;
+  border: 1px solid var(--bb-border);
   border-radius: 16px;
 }
-.bb-forgot-title { font-size: 19px; font-weight: 700; color: #fff; margin-bottom: 6px; }
-.bb-forgot-sub { font-size: 13px; color: #9090B8; margin-bottom: 16px; line-height: 1.4; }
+.bb-forgot-title { font-size: 19px; font-weight: 700; color: var(--bb-text); margin-bottom: 6px; }
+.bb-forgot-sub { font-size: 13px; color: var(--bb-text-soft); margin-bottom: 16px; line-height: 1.4; }
 .bb-forgot-input {
   .q-field__control { background: rgba(255, 255, 255, 0.04) !important; }
-  &.q-field--outlined .q-field__control:before { border-color: rgba(255, 255, 255, 0.1) !important; }
-  &.q-field--focused.q-field--outlined .q-field__control:before { border-color: #6C4ED4 !important; }
+  &.q-field--outlined .q-field__control:before { border-color: var(--bb-border) !important; }
+  &.q-field--focused.q-field--outlined .q-field__control:before { border-color: var(--bb-accent) !important; }
 }
 
 /* ── Boot / preloading screen ─────────────────────────────── */
@@ -620,7 +632,7 @@ async function handleDemo() {
   place-items: center;
   overflow: hidden;
   background:
-    radial-gradient(1200px 600px at 15% 10%, rgba(108, 78, 212, 0.22), transparent 60%),
+    radial-gradient(1200px 600px at 15% 10%, rgba(var(--bb-accent-rgb), 0.22), transparent 60%),
     radial-gradient(900px 500px at 90% 90%, rgba(224, 64, 251, 0.18), transparent 60%),
     #070714;
 
@@ -659,9 +671,9 @@ async function handleDemo() {
 .bb-boot-icon {
   width: 64px; height: 64px; flex-shrink: 0;
   border-radius: 18px;
-  background: linear-gradient(135deg, #6C4ED4, #E040FB);
+  background: transparent;
   display: flex; align-items: center; justify-content: center;
-  box-shadow: 0 12px 44px rgba(108, 78, 212, 0.6);
+  box-shadow: 0 12px 44px rgba(var(--bb-accent-rgb), 0.6);
   animation:
     bb-boot-pop 0.8s cubic-bezier(0.22, 1, 0.36, 1) both,
     bb-boot-pulse 2.2s ease-in-out 0.8s infinite;
@@ -705,7 +717,7 @@ async function handleDemo() {
   100% { opacity: 1; transform: none; }
 }
 @keyframes bb-boot-pulse {
-  0%, 100% { box-shadow: 0 12px 40px rgba(108, 78, 212, 0.45); }
+  0%, 100% { box-shadow: 0 12px 40px rgba(var(--bb-accent-rgb), 0.45); }
   50%      { box-shadow: 0 12px 64px rgba(224, 64, 251, 0.8); }
 }
 @keyframes bb-boot-reveal { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }

@@ -46,7 +46,7 @@
             <q-icon
               :name="showPwd ? 'visibility_off' : 'visibility'"
               class="cursor-pointer"
-              style="color: #6E6E9A"
+              style="color: var(--bb-text-dim)"
               @click="showPwd = !showPwd"
             />
           </template>
@@ -71,6 +71,15 @@
           outlined dense dark
           class="bb-input q-mb-md"
         />
+
+        <div class="bb-consent q-mb-md">
+          <q-checkbox v-model="consent" dense dark size="sm" color="deep-purple-4" />
+          <span>
+            I agree to the
+            <a href="#/privacy" target="_blank" rel="noopener">Privacy Policy</a>
+            and consent to the collection, processing and storage of my financial data as described.
+          </span>
+        </div>
 
         <q-btn
           type="submit"
@@ -104,6 +113,7 @@ const securityQuestion = ref<string | null>(null);
 const securityAnswer = ref('');
 const securityQuestions = SECURITY_QUESTIONS;
 const showPwd = ref(false);
+const consent = ref(false);
 const loading = ref(false);
 const errorMessage = ref('');
 const router = useRouter();
@@ -113,7 +123,8 @@ const canSubmit = computed(() =>
   email.value.trim().length > 0 &&
   password.value.trim().length > 0 &&
   Boolean(securityQuestion.value) &&
-  securityAnswer.value.trim().length > 0,
+  securityAnswer.value.trim().length > 0 &&
+  consent.value,
 );
 
 async function handleRegister() {
@@ -134,6 +145,11 @@ async function handleRegister() {
     return;
   }
 
+  if (!consent.value) {
+    errorMessage.value = 'Please accept the Privacy Policy to create an account.';
+    return;
+  }
+
   loading.value = true;
 
   try {
@@ -143,6 +159,7 @@ async function handleRegister() {
       name.value,
       securityQuestion.value,
       securityAnswer.value,
+      consent.value,
     );
     await auth.login(email.value, password.value);
     await router.push('/app/dashboard');
@@ -156,15 +173,15 @@ async function handleRegister() {
 
 <style lang="scss">
 .bb-login-page {
-  background: #0A0A1B;
+  background: var(--bb-bg);
   min-height: 100vh;
 }
 
 .bb-login-card {
   width: 100%;
   max-width: 400px;
-  background: #0F1030;
-  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: var(--bb-surface);
+  border: 1px solid var(--bb-border);
   border-radius: 18px;
   padding: 40px 36px;
 }
@@ -178,7 +195,7 @@ async function handleRegister() {
   &-icon {
     width: 44px;
     height: 44px;
-    background: linear-gradient(135deg, #6C4ED4, #E040FB);
+    background: linear-gradient(135deg,var(--bb-accent),var(--bb-accent-2));
     border-radius: 12px;
     display: flex;
     align-items: center;
@@ -189,26 +206,26 @@ async function handleRegister() {
   span {
     font-size: 20px;
     font-weight: 700;
-    color: #ffffff;
+    color: var(--bb-text);
   }
 }
 
 .bb-login-title {
   font-size: 20px;
   font-weight: 700;
-  color: #ffffff;
+  color: var(--bb-text);
   margin-bottom: 6px;
 }
 
 .bb-login-sub {
   font-size: 13px;
-  color: #6E6E9A;
+  color: var(--bb-text-dim);
 }
 
 .bb-field-label {
   font-size: 12px;
   font-weight: 600;
-  color: #9090B8;
+  color: var(--bb-text-soft);
   margin-bottom: 6px;
 }
 
@@ -218,17 +235,17 @@ async function handleRegister() {
   }
 
   &.q-field--outlined .q-field__control:before {
-    border-color: rgba(255, 255, 255, 0.1) !important;
+    border-color: var(--bb-border) !important;
   }
 
   &.q-field--focused.q-field--outlined .q-field__control:before {
-    border-color: #6C4ED4 !important;
+    border-color: var(--bb-accent) !important;
   }
 }
 
 .bb-login-btn {
-  background: linear-gradient(135deg, #6C4ED4, #E040FB) !important;
-  color: #ffffff !important;
+  background: linear-gradient(135deg,var(--bb-accent),var(--bb-accent-2)) !important;
+  color: var(--bb-text) !important;
   height: 44px !important;
   font-size: 14px !important;
   font-weight: 600 !important;
@@ -239,7 +256,7 @@ async function handleRegister() {
   display: flex;
   align-items: center;
   gap: 12px;
-  color: #3D3D5C;
+  color: var(--bb-text-muted);
   font-size: 12px;
 
   &::before, &::after {
@@ -250,17 +267,29 @@ async function handleRegister() {
   }
 }
 
+.bb-consent {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--bb-text-dim);
+  line-height: 1.5;
+
+  a { color: var(--bb-accent-light); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+}
+
 .bb-signup-txt {
   font-size: 13px;
-  color: #6E6E9A;
+  color: var(--bb-text-dim);
 }
 
 .bb-signup-link {
   font-size: 13px;
-  color: #8B6FEC;
+  color: var(--bb-accent-light);
   cursor: pointer;
   font-weight: 500;
 
-  &:hover { color: #E040FB; }
+  &:hover { color: var(--bb-accent-2); }
 }
 </style>

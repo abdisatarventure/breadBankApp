@@ -10,6 +10,10 @@ const routes: RouteRecordRaw[] = [
     component: () => import('pages/RegisterPage.vue'),
   },
   {
+    path: '/privacy',
+    component: () => import('pages/PrivacyPolicyPage.vue'),
+  },
+  {
     path: '/',
     redirect: '/login',
   },
@@ -19,6 +23,7 @@ const routes: RouteRecordRaw[] = [
     redirect: '/app/dashboard',
     children: [
       { path: 'dashboard', component: () => import('pages/DashboardPage.vue') },
+      { path: 'dashboard-v2', component: () => import('pages/DashboardV2Page.vue') },
       { path: 'transactions', component: () => import('pages/TransactionsPage.vue') },
       { path: 'upload', component: () => import('pages/UploadPage.vue') },
       { path: 'budgets', component: () => import('pages/BudgetsPage.vue') },

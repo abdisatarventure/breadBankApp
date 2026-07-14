@@ -33,7 +33,7 @@
         </div>
         <div class="col-6 col-md-4">
           <div class="bb-stat">
-            <div class="bb-stat-lbl"><span class="bb-dot" style="background:#6C4ED4"></span>THIS MONTH'S 20%</div>
+            <div class="bb-stat-lbl"><span class="bb-dot" style="background: var(--bb-accent)"></span>THIS MONTH'S 20%</div>
             <div class="bb-stat-val">{{ fmt(data.reserve.savedThisMonth) }}</div>
             <div class="bb-stat-row">
               <span class="bb-stat-cmp">of {{ fmt(data.reserve.targetThisMonth) }} target · {{ data.reserve.pct.toFixed(0) }}%</span>
@@ -103,10 +103,10 @@
       <!-- Goals -->
       <div class="bb-bg-panel q-mb-lg">
         <div class="bb-bg-panel-hdr">
-          <q-icon name="flag" size="18px" style="color:#8B6FEC" />
+          <q-icon name="flag" size="18px" style="color: var(--bb-accent-light)" />
           <span>Your goals</span>
           <q-space />
-          <q-btn flat dense no-caps icon="add" label="New goal" class="bb-trim-btn" style="color:#8B6FEC" @click="openCreate" />
+          <q-btn flat dense no-caps icon="add" label="New goal" class="bb-trim-btn" style="color: var(--bb-accent-light)" @click="openCreate" />
         </div>
 
         <div v-if="data.goals.length === 0" class="bb-bg-empty">
@@ -163,7 +163,7 @@
       <q-card class="bb-planner-card" style="width:380px">
         <div class="bb-planner-hdr">
           <div class="bb-planner-title">
-            <q-icon :name="addMoneyGoal?.icon || 'flag'" size="18px" style="color:#8B6FEC" />
+            <q-icon :name="addMoneyGoal?.icon || 'flag'" size="18px" style="color: var(--bb-accent-light)" />
             Add to {{ addMoneyGoal?.name }}
           </div>
           <q-btn flat round dense icon="close" v-close-popup />
@@ -189,7 +189,7 @@
               no-caps unelevated label="Add money"
               :loading="addingMoney"
               :disable="!(Number(addAmount) > 0) || Number(addAmount) > addMoneyMax + 0.01"
-              style="background:linear-gradient(135deg,#6C4ED4,#E040FB);color:#fff;border-radius:8px"
+              style="background:linear-gradient(135deg,var(--bb-accent),var(--bb-accent-2));color:var(--bb-on-accent);border-radius:8px"
               @click="addMoney"
             />
           </div>
@@ -202,7 +202,7 @@
       <q-card class="bb-planner-card" style="width:440px">
         <div class="bb-planner-hdr">
           <div class="bb-planner-title">
-            <q-icon name="flag" size="18px" style="color:#8B6FEC" /> {{ editingId ? 'Edit goal' : 'New goal' }}
+            <q-icon name="flag" size="18px" style="color: var(--bb-accent-light)" /> {{ editingId ? 'Edit goal' : 'New goal' }}
           </div>
           <q-btn flat round dense icon="close" v-close-popup />
         </div>
@@ -264,7 +264,7 @@
             <q-btn
               no-caps unelevated :label="editingId ? 'Save' : 'Create goal'"
               :loading="saving" :disable="!form.name.trim() || !(Number(form.target) > 0)"
-              style="background:linear-gradient(135deg,#6C4ED4,#E040FB);color:#fff;border-radius:8px"
+              style="background:linear-gradient(135deg,var(--bb-accent),var(--bb-accent-2));color:var(--bb-on-accent);border-radius:8px"
               @click="saveGoal"
             />
           </div>
@@ -277,7 +277,7 @@
       <q-card class="bb-planner-card">
         <div class="bb-planner-hdr">
           <div>
-            <div class="bb-planner-title"><q-icon name="auto_awesome" size="18px" style="color:#8B6FEC" /> Split your savings across goals</div>
+            <div class="bb-planner-title"><q-icon name="auto_awesome" size="18px" style="color: var(--bb-accent-light)" /> Split your savings across goals</div>
             <div class="bb-planner-sub">Suggested from the {{ fmt(splitAvailable) }} of savings you have available for goals.</div>
           </div>
           <q-btn flat round dense icon="close" v-close-popup />
@@ -318,7 +318,7 @@
                 no-caps unelevated label="Apply split"
                 :loading="applying"
                 :disable="planTotal <= 0 || planTotal > splitAvailable + 0.01"
-                style="background:linear-gradient(135deg,#6C4ED4,#E040FB);color:#fff;border-radius:8px"
+                style="background:linear-gradient(135deg,var(--bb-accent),var(--bb-accent-2));color:var(--bb-on-accent);border-radius:8px"
                 @click="applyPlan"
               />
             </div>
@@ -553,41 +553,41 @@ onMounted(load);
 </script>
 
 <style lang="scss">
-.bb-goals { background-color: #0A0A1B; min-height: 100vh; }
+.bb-goals { background-color: var(--bb-bg); min-height: 100vh; }
 
 .bb-goal-done { margin-left: 8px; font-size: 10px; }
 
 .bb-goal-form { display: flex; flex-direction: column; gap: 14px; margin-bottom: 6px; }
-.bb-picker-lbl { font-size: 11px; color: #8F8FB5; margin-bottom: 6px; }
+.bb-picker-lbl { font-size: 11px; color: var(--bb-text-soft); margin-bottom: 6px; }
 .bb-picker-btn {
-  color: #E6E6F5; border-color: rgba(255,255,255,0.18); border-radius: 8px;
+  color: var(--bb-text-soft); border-color: var(--bb-border); border-radius: 8px;
   text-transform: none; padding: 6px 12px;
 }
 .bb-swatch { width: 18px; height: 18px; border-radius: 5px; display: inline-block; }
 
 .bb-icon-grid {
   display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; padding: 10px;
-  background: #0F1030;
+  background: var(--bb-surface);
 }
 .bb-icon-cell {
   width: 38px; height: 38px; border-radius: 8px; display: grid; place-items: center;
-  background: #0A0A1B; border: 1px solid rgba(255,255,255,0.08); color: #C6C6E5; cursor: pointer;
-  &:hover { border-color: #6C4ED4; }
-  &.active { border-color: #8B6FEC; background: rgba(108,78,212,0.25); color: #fff; }
+  background: var(--bb-bg); border: 1px solid var(--bb-border); color: var(--bb-text-soft); cursor: pointer;
+  &:hover { border-color: var(--bb-accent); }
+  &.active { border-color: var(--bb-accent-light); background: rgba(var(--bb-accent-rgb),0.25); color: var(--bb-text); }
 }
 .bb-color-grid {
-  display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; padding: 10px; background: #0F1030;
+  display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; padding: 10px; background: var(--bb-surface);
 }
 .bb-color-cell {
   width: 30px; height: 30px; border-radius: 8px; cursor: pointer; border: 2px solid transparent;
-  &.active { border-color: #fff; }
+  &.active { border-color: var(--bb-text); }
 }
 
 // ── Shared look reused from Budgets, defined locally so this page renders
 //    correctly whether or not the Budgets tab has been visited this session. ──
 .bb-budgets-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
 .bb-ai-btn {
-  background: linear-gradient(135deg, #6C4ED4, #E040FB); color: #fff; border-radius: 10px;
+  background: linear-gradient(135deg,var(--bb-accent),var(--bb-accent-2)); color: var(--bb-on-accent); border-radius: 10px;
   padding: 8px 16px; font-weight: 600; flex-shrink: 0;
 }
 .bb-trim-btn { color: #F59E0B; }
@@ -595,13 +595,13 @@ onMounted(load);
 .bb-category-icon { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; flex-shrink: 0; }
 
 // Panel + goal rows
-.bb-bg-panel { background: #0F1030; border: 1px solid rgba(255,255,255,0.07); border-radius: 14px; padding: 20px; }
+.bb-bg-panel { background: var(--bb-surface); border: 1px solid var(--bb-border); border-radius: 14px; padding: 20px; }
 .bb-bg-panel-hdr {
   display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 16px;
-  font-size: 14px; font-weight: 600; color: #ffffff;
+  font-size: 14px; font-weight: 600; color: var(--bb-text);
 }
-.bb-bg-panel-sub { font-size: 12px; font-weight: 400; color: #6E6E9A; flex-basis: 100%; }
-.bb-bg-empty { color: #6E6E9A; font-size: 13px; padding: 8px 0 16px; }
+.bb-bg-panel-sub { font-size: 12px; font-weight: 400; color: var(--bb-text-dim); flex-basis: 100%; }
+.bb-bg-empty { color: var(--bb-text-dim); font-size: 13px; padding: 8px 0 16px; }
 .bb-reserve { border-color: rgba(34,197,94,0.25); }
 .bb-move-banner {
   background: rgba(245,158,11,0.10); border: 1px solid rgba(245,158,11,0.35);
@@ -612,44 +612,44 @@ onMounted(load);
 .bb-bg-row { display: flex; align-items: center; gap: 14px; }
 .bb-bg-main { flex: 1; min-width: 0; }
 .bb-bg-row-top { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 6px; }
-.bb-bg-name { font-size: 14px; font-weight: 600; color: #F8FAFF; }
-.bb-bg-amounts { font-size: 13px; color: #9090B8; white-space: nowrap; }
-.bb-bg-limit { color: #F8FAFF; font-weight: 600; }
+.bb-bg-name { font-size: 14px; font-weight: 600; color: var(--bb-text); }
+.bb-bg-amounts { font-size: 13px; color: var(--bb-text-soft); white-space: nowrap; }
+.bb-bg-limit { color: var(--bb-text); font-weight: 600; }
 .bb-bg-bar-wrap { height: 7px; background: rgba(255,255,255,0.06); border-radius: 4px; overflow: hidden; }
 .bb-bg-bar { height: 100%; border-radius: 4px; transition: width 0.5s ease; }
 .bb-bg-row-bot { display: flex; justify-content: space-between; margin-top: 5px; font-size: 11px; font-weight: 600; }
-.bb-bg-last { color: #6E6E9A; font-weight: 400; }
-.bb-bg-del { color: #6E6E9A; flex-shrink: 0; &:hover { color: #EF4444; } }
+.bb-bg-last { color: var(--bb-text-dim); font-weight: 400; }
+.bb-bg-del { color: var(--bb-text-dim); flex-shrink: 0; &:hover { color: #EF4444; } }
 .bb-bg-add-btn { color: #22C55E; flex-shrink: 0; &:hover { color: #4ADE80; } }
 
 .bb-add-quick { display: flex; align-items: center; gap: 10px; }
-.bb-add-quick .q-btn { color: #8B6FEC; }
-.bb-add-note { font-size: 11px; color: #6E6E9A; }
+.bb-add-quick .q-btn { color: var(--bb-accent-light); }
+.bb-add-note { font-size: 11px; color: var(--bb-text-dim); }
 
 // Dialog (editor + AI split)
 .bb-planner-card {
-  background: #0F1030; color: #E6E6F5; width: 560px; max-width: 92vw;
-  border: 1px solid rgba(255,255,255,0.08); border-radius: 16px; padding: 20px;
+  background: var(--bb-surface); color: var(--bb-text-soft); width: 560px; max-width: 92vw;
+  border: 1px solid var(--bb-border); border-radius: 16px; padding: 20px;
 }
 .bb-planner-hdr { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 16px; }
-.bb-planner-title { font-size: 18px; font-weight: 700; color: #F8FAFF; display: flex; align-items: center; gap: 8px; }
-.bb-planner-sub { color: #8F8FB5; font-size: 13px; margin-top: 4px; max-width: 420px; }
+.bb-planner-title { font-size: 18px; font-weight: 700; color: var(--bb-text); display: flex; align-items: center; gap: 8px; }
+.bb-planner-sub { color: var(--bb-text-soft); font-size: 13px; margin-top: 4px; max-width: 420px; }
 .bb-planner-loading, .bb-planner-empty {
   display: flex; align-items: center; justify-content: center; gap: 12px;
-  min-height: 160px; color: #8F8FB5; text-align: center; font-size: 14px;
+  min-height: 160px; color: var(--bb-text-soft); text-align: center; font-size: 14px;
 }
 .bb-planner-list { display: flex; flex-direction: column; gap: 10px; max-height: 46vh; overflow-y: auto; padding-right: 4px; }
 .bb-planner-row { display: flex; align-items: center; gap: 12px; }
 .bb-planner-info { flex: 1; min-width: 0; }
-.bb-planner-name { font-size: 14px; font-weight: 600; color: #F8FAFF; }
-.bb-planner-note { font-size: 12px; color: #6E6E9A; margin-top: 2px; }
+.bb-planner-name { font-size: 14px; font-weight: 600; color: var(--bb-text); }
+.bb-planner-note { font-size: 12px; color: var(--bb-text-dim); margin-top: 2px; }
 .bb-planner-amt { width: 120px; flex-shrink: 0; }
 .bb-planner-foot {
   display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;
-  margin-top: 18px; padding-top: 16px; border-top: 1px solid rgba(255,255,255,0.08);
+  margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--bb-border);
 }
-.bb-planner-total { font-size: 14px; color: #C6C6E5; }
-.bb-planner-total strong { color: #F8FAFF; font-size: 16px; }
-.bb-planner-vs { color: #6E6E9A; font-size: 12px; margin-left: 8px; }
+.bb-planner-total { font-size: 14px; color: var(--bb-text-soft); }
+.bb-planner-total strong { color: var(--bb-text); font-size: 16px; }
+.bb-planner-vs { color: var(--bb-text-dim); font-size: 12px; margin-left: 8px; }
 .bb-planner-actions { display: flex; align-items: center; gap: 8px; }
 </style>

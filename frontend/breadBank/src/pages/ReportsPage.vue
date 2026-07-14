@@ -18,11 +18,11 @@
 
     <template v-else>
       <div v-if="!hasData" class="bb-no-data q-mb-lg">
-        <q-icon name="upload_file" size="48px" style="color:#6C4ED4;opacity:0.4" />
+        <q-icon name="upload_file" size="48px" style="color: var(--bb-accent);opacity:0.4" />
         <div class="bb-no-data-title">No reporting data yet</div>
         <div class="bb-no-data-sub">Upload transaction CSVs to unlock merchant, category, and year-over-year reporting.</div>
         <q-btn no-caps unelevated label="Upload your first statement" to="/app/upload"
-          style="background:linear-gradient(135deg,#6C4ED4,#E040FB);color:#fff;border-radius:8px;margin-top:12px" />
+          style="background:linear-gradient(135deg,var(--bb-accent),var(--bb-accent-2));color:var(--bb-on-accent);border-radius:8px;margin-top:12px" />
       </div>
 
       <template v-else>
@@ -216,6 +216,7 @@
 import { ref, computed, onMounted } from 'vue';
 import type { ApexOptions } from 'apexcharts';
 import VueApexCharts from 'vue3-apexcharts';
+import { themeColor } from 'src/services/theme';
 import { api, type ReportsData, type MonthlyBreakdown } from 'src/services/api';
 
 const loading = ref(true);
@@ -271,7 +272,7 @@ const categoryChartOptions = computed<ApexOptions>(() => ({
   },
   grid: { borderColor: '#1F1F3A' },
   fill: { opacity: 1 },
-  colors: ['#6C4ED4', '#22C55E'],
+  colors: [themeColor('--bb-accent', '#6C4ED4'), '#22C55E'],
 }));
 
 // Build a spend-comparison pill. For a spending metric, spending *more* is the
@@ -363,7 +364,7 @@ const monthlyChartOptions = computed<ApexOptions>(() => ({
   tooltip: { y: { formatter: (v) => `$${Number(v).toLocaleString()}` } },
   grid: { borderColor: '#1F1F3A' },
   fill: { opacity: 1 },
-  colors: ['#6C4ED4', '#22C55E'],
+  colors: [themeColor('--bb-accent', '#6C4ED4'), '#22C55E'],
 }));
 
 const hasMonthlyData = computed(() => monthlyMonths.value.some((m) => m.spending !== 0 || m.income !== 0));
@@ -404,56 +405,56 @@ onMounted(() => {
 </script>
 
 <style lang="scss">
-.bb-reports { background-color: #0A0A1B; min-height: 100vh; }
+.bb-reports { background-color: var(--bb-bg); min-height: 100vh; }
 .bb-page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
 .bb-page-title { font-size: 28px; font-weight: 700; }
-.bb-page-sub { color: #8F8FB5; margin-top: 8px; }
-.bb-report-card { background: #11112A; border: 1px solid #22223B; border-radius: 18px; padding: 22px; min-height: 280px; }
+.bb-page-sub { color: var(--bb-text-soft); margin-top: 8px; }
+.bb-report-card { background: var(--bb-surface-2); border: 1px solid #22223B; border-radius: 18px; padding: 22px; min-height: 280px; }
 .bb-report-card--accent { background: linear-gradient(180deg, rgba(26, 18, 70, 0.95), #0B0B1A); }
 .bb-report-card__header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 18px; }
 .bb-report-card__title { font-size: 15px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.16em; }
-.bb-report-card__sub { color: #8F8FB5; font-size: 12px; margin-top: 6px; }
+.bb-report-card__sub { color: var(--bb-text-soft); font-size: 12px; margin-top: 6px; }
 .bb-report-list { display: grid; gap: 14px; }
-.bb-report-row { display: flex; justify-content: space-between; gap: 16px; align-items: center; padding: 14px 0; border-bottom: 1px solid rgba(255,255,255,0.06); }
+.bb-report-row { display: flex; justify-content: space-between; gap: 16px; align-items: center; padding: 14px 0; border-bottom: 1px solid var(--bb-border); }
 .bb-report-row:last-child { border-bottom: none; }
-.bb-report-row__label { color: #E2E2FF; font-weight: 600; }
-.bb-report-row__meta { color: #A5A5C4; font-size: 12px; margin-top: 4px; }
-.bb-report-row__value { color: #6C4ED4; font-weight: 700; }
+.bb-report-row__label { color: var(--bb-text-soft); font-weight: 600; }
+.bb-report-row__meta { color: var(--bb-text-soft); font-size: 12px; margin-top: 4px; }
+.bb-report-row__value { color: var(--bb-accent); font-weight: 700; }
 .bb-report-summary { display: grid; gap: 14px; }
 .bb-report-summary__line { display: flex; justify-content: space-between; align-items: center; }
-.bb-report-summary__line--sub { color: #8F8FB5; font-size: 13px; }
+.bb-report-summary__line--sub { color: var(--bb-text-soft); font-size: 13px; }
 .bb-report-pill { display: inline-flex; padding: 8px 12px; border-radius: 999px; font-size: 12px; font-weight: 700; width: fit-content; }
 .bb-pill-positive { background: rgba(34, 197, 94, 0.16); color: #22C55E; }
 .bb-pill-negative { background: rgba(239, 68, 68, 0.16); color: #EF4444; }
-.bb-pill-neutral { background: rgba(143, 143, 181, 0.16); color: #8F8FB5; }
+.bb-pill-neutral { background: rgba(143, 143, 181, 0.16); color: var(--bb-text-soft); }
 .bb-report-trends { display: grid; gap: 16px; }
 .bb-trend-row { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
-.bb-trend-label { color: #E2E2FF; font-weight: 600; }
+.bb-trend-label { color: var(--bb-text-soft); font-weight: 600; }
 .bb-trend-values { display: flex; gap: 12px; align-items: center; }
-.bb-trend-values__compare { color: #8F8FB5; font-size: 13px; }
+.bb-trend-values__compare { color: var(--bb-text-soft); font-size: 13px; }
 .bb-insight-list { display: grid; gap: 14px; }
-.bb-insight-item { display: grid; gap: 4px; padding: 14px 0; border-bottom: 1px solid rgba(255,255,255,0.06); }
-.bb-insight-tag { color: #8F8FB5; font-size: 12px; text-transform: uppercase; letter-spacing: 0.12em; }
-.bb-loading { display: flex; align-items: center; gap: 12px; color: #C6C6E5; min-height: 250px; }
-.bb-no-data { display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 14px; background: #11112A; border: 1px dashed rgba(108, 78, 212, 0.3); border-radius: 18px; padding: 40px; text-align: center; }
+.bb-insight-item { display: grid; gap: 4px; padding: 14px 0; border-bottom: 1px solid var(--bb-border); }
+.bb-insight-tag { color: var(--bb-text-soft); font-size: 12px; text-transform: uppercase; letter-spacing: 0.12em; }
+.bb-loading { display: flex; align-items: center; gap: 12px; color: var(--bb-text-soft); min-height: 250px; }
+.bb-no-data { display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 14px; background: var(--bb-surface-2); border: 1px dashed rgba(var(--bb-accent-rgb), 0.3); border-radius: 18px; padding: 40px; text-align: center; }
 .bb-no-data-title { font-size: 20px; font-weight: 700; }
-.bb-no-data-sub { color: #8F8FB5; max-width: 420px; }
+.bb-no-data-sub { color: var(--bb-text-soft); max-width: 420px; }
 
 .bb-year-select { min-width: 110px; }
 .bb-month-table { margin-top: 20px; display: flex; flex-direction: column; overflow-x: auto; }
 .bb-month-row {
   display: grid; grid-template-columns: 0.9fr 1fr 1fr 1fr 0.8fr 1fr 1.2fr; gap: 12px;
   align-items: center; padding: 10px 4px; min-width: 660px;
-  border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 13px; color: #E2E2FF;
+  border-bottom: 1px solid var(--bb-border); font-size: 13px; color: var(--bb-text-soft);
 }
 .bb-month-row:last-child { border-bottom: none; }
 .bb-month-row--head {
   font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em;
-  color: #8F8FB5; font-weight: 600;
+  color: var(--bb-text-soft); font-weight: 600;
 }
 .bb-month-num { text-align: right; font-variant-numeric: tabular-nums; }
-.bb-month-muted { color: #6E6E9A; }
+.bb-month-muted { color: var(--bb-text-dim); }
 .bb-amt-income { color: #22C55E; }
 .bb-amt-neg { color: #EF4444; }
-.bb-month-empty { color: #8F8FB5; padding: 24px 0; text-align: center; }
+.bb-month-empty { color: var(--bb-text-soft); padding: 24px 0; text-align: center; }
 </style>

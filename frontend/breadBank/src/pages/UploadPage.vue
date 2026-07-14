@@ -36,7 +36,7 @@
           <q-icon :name="accountIcon(account.institution, account.type)" size="18px" :style="{ color: accountColor(account.institution) }" />
           <span class="bb-hidden-name">{{ account.name }}</span>
           <span class="bb-hidden-inst">{{ account.institution }}</span>
-          <q-btn flat dense no-caps size="sm" label="Restore" icon="undo" style="color:#8B6FEC"
+          <q-btn flat dense no-caps size="sm" label="Restore" icon="undo" style="color: var(--bb-accent-light)"
             @click="setArchived(account, false)" />
         </div>
       </div>
@@ -71,13 +71,13 @@
       </template>
       <template v-else>
         <div class="bb-drop-icon">
-          <q-icon name="cloud_upload" size="40px" style="color:#6C4ED4;opacity:0.7" />
+          <q-icon name="cloud_upload" size="40px" style="color: var(--bb-accent);opacity:0.7" />
         </div>
         <div class="bb-drop-title">
           {{ isDragging ? 'Drop your CSV here' : 'Drag & drop your CSV file here' }}
         </div>
         <div class="bb-drop-sub">or click to browse · supports .csv files</div>
-        <q-chip v-if="selectedAccount" class="q-mt-sm" style="background:rgba(108,78,212,0.15);color:#8B6FEC">
+        <q-chip v-if="selectedAccount" class="q-mt-sm" style="background:rgba(var(--bb-accent-rgb),0.15);color: var(--bb-accent-light)">
           {{ selectedAccount.name }} — {{ selectedAccount.institution }}
         </q-chip>
       </template>
@@ -117,12 +117,12 @@
         <span>Loading history...</span>
       </div>
       <div v-else-if="history.length === 0" class="bb-empty-uploads">
-        <q-icon name="history" size="32px" style="color:#3D3D5C" />
+        <q-icon name="history" size="32px" style="color: var(--bb-text-muted)" />
         <span>No uploads yet — import your first statement above</span>
       </div>
       <div v-else class="bb-history-list">
         <div v-for="item in history" :key="item.id" class="bb-history-item">
-          <q-icon name="upload_file" size="18px" style="color:#6C4ED4" />
+          <q-icon name="upload_file" size="18px" style="color: var(--bb-accent)" />
           <div class="bb-history-info">
             <div class="bb-history-name">{{ item.filename }}</div>
             <div class="bb-history-meta">
@@ -152,10 +152,10 @@
           including any you've since re-categorized. You can always re-upload the file.
         </div>
         <div class="bb-undo-actions">
-          <q-btn flat no-caps label="Cancel" style="color:#6E6E9A" v-close-popup />
+          <q-btn flat no-caps label="Cancel" style="color: var(--bb-text-dim)" v-close-popup />
           <q-btn
             no-caps unelevated label="Remove transactions" :loading="undoing"
-            style="background:#EF4444;color:#fff;border-radius:8px;padding:6px 16px"
+            style="background:#EF4444;color: var(--bb-text);border-radius:8px;padding:6px 16px"
             @click="confirmUndo"
           />
         </div>
@@ -371,53 +371,53 @@ const exportTips = [
 </script>
 
 <style lang="scss">
-.bb-upload-page { background-color: #0A0A1B; min-height: 100vh; }
+.bb-upload-page { background-color: var(--bb-bg); min-height: 100vh; }
 
 .bb-account-card {
   position: relative;
-  background: #0F1030; border: 1px solid rgba(255,255,255,0.07);
+  background: var(--bb-surface); border: 1px solid var(--bb-border);
   border-radius: 12px; padding: 16px; cursor: pointer;
   transition: all 0.15s ease; display: flex; flex-direction: column; gap: 6px;
-  &:hover { border-color: rgba(108,78,212,0.3); background: #141440;
+  &:hover { border-color: rgba(var(--bb-accent-rgb),0.3); background: var(--bb-surface-2);
     .bb-account-hide { opacity: 1; } }
-  &--active { border-color: #6C4ED4 !important; background: rgba(108,78,212,0.1) !important; }
+  &--active { border-color: var(--bb-accent) !important; background: rgba(var(--bb-accent-rgb),0.1) !important; }
 }
 .bb-account-hide {
-  position: absolute; top: 6px; right: 6px; color: #6E6E9A !important;
+  position: absolute; top: 6px; right: 6px; color: var(--bb-text-dim) !important;
   opacity: 0; transition: opacity 0.15s ease;
   &:hover { color: #EF4444 !important; }
 }
-.bb-account-name { font-size: 13px; font-weight: 600; color: #ffffff; }
-.bb-account-type { font-size: 11px; color: #6E6E9A; }
+.bb-account-name { font-size: 13px; font-weight: 600; color: var(--bb-text); }
+.bb-account-type { font-size: 11px; color: var(--bb-text-dim); }
 
 .bb-hidden-accts {
-  background: #0C0C22; border: 1px dashed rgba(255,255,255,0.1); border-radius: 12px; padding: 14px 16px;
+  background: var(--bb-surface-2); border: 1px dashed var(--bb-border); border-radius: 12px; padding: 14px 16px;
 }
-.bb-hidden-title { font-size: 12px; font-weight: 700; letter-spacing: 0.08em; color: #8F8FB5; text-transform: uppercase; }
-.bb-hidden-sub { font-size: 11.5px; color: #6E6E9A; margin: 4px 0 10px; }
+.bb-hidden-title { font-size: 12px; font-weight: 700; letter-spacing: 0.08em; color: var(--bb-text-soft); text-transform: uppercase; }
+.bb-hidden-sub { font-size: 11.5px; color: var(--bb-text-dim); margin: 4px 0 10px; }
 .bb-hidden-list { display: flex; flex-direction: column; gap: 4px; }
 .bb-hidden-item { display: flex; align-items: center; gap: 10px; padding: 6px 0; }
-.bb-hidden-name { font-size: 13px; color: #C6C6E5; font-weight: 600; }
-.bb-hidden-inst { font-size: 11px; color: #6E6E9A; flex: 1; }
+.bb-hidden-name { font-size: 13px; color: var(--bb-text-soft); font-weight: 600; }
+.bb-hidden-inst { font-size: 11px; color: var(--bb-text-dim); flex: 1; }
 
 .bb-historical-row {
   display: flex; align-items: flex-start; gap: 12px;
-  background: #0F1030; border: 1px solid rgba(255,255,255,0.06);
+  background: var(--bb-surface); border: 1px solid var(--bb-border);
   border-radius: 12px; padding: 12px 16px;
 }
-.bb-historical-label { font-size: 13px; font-weight: 600; color: #ffffff; }
-.bb-historical-sub { font-size: 11px; color: #6E6E9A; margin-top: 2px; max-width: 560px; }
+.bb-historical-label { font-size: 13px; font-weight: 600; color: var(--bb-text); }
+.bb-historical-sub { font-size: 11px; color: var(--bb-text-dim); margin-top: 2px; max-width: 560px; }
 
 .bb-drop-zone {
-  background: #0F1030; border: 2px dashed rgba(108,78,212,0.25);
+  background: var(--bb-surface); border: 2px dashed rgba(var(--bb-accent-rgb),0.25);
   border-radius: 16px; padding: 48px 24px; cursor: pointer;
   display: flex; flex-direction: column; align-items: center; gap: 8px;
   transition: all 0.2s ease;
-  &:hover, &--active { border-color: rgba(108,78,212,0.5); background: rgba(108,78,212,0.04); }
-  &--uploading { cursor: default; border-color: rgba(108,78,212,0.4); }
+  &:hover, &--active { border-color: rgba(var(--bb-accent-rgb),0.5); background: rgba(var(--bb-accent-rgb),0.04); }
+  &--uploading { cursor: default; border-color: rgba(var(--bb-accent-rgb),0.4); }
 }
-.bb-drop-title { font-size: 15px; font-weight: 600; color: #ffffff; }
-.bb-drop-sub   { font-size: 12px; color: #6E6E9A; }
+.bb-drop-title { font-size: 15px; font-weight: 600; color: var(--bb-text); }
+.bb-drop-sub   { font-size: 12px; color: var(--bb-text-dim); }
 
 .bb-result {
   display: flex; align-items: center; gap: 10px;
@@ -427,36 +427,36 @@ const exportTips = [
   &--error   { background: rgba(239,68,68,0.1);  color: #EF4444; border: 1px solid rgba(239,68,68,0.2); }
 }
 
-.bb-tip-card { background: #0F1030; border: 1px solid rgba(255,255,255,0.06); border-radius: 12px; padding: 16px; }
+.bb-tip-card { background: var(--bb-surface); border: 1px solid var(--bb-border); border-radius: 12px; padding: 16px; }
 .bb-tip-header { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
-.bb-tip-bank   { font-size: 13px; font-weight: 600; color: #ffffff; }
-.bb-tip-steps  { padding-left: 16px; margin: 0; li { font-size: 12px; color: #6E6E9A; line-height: 1.8; } }
+.bb-tip-bank   { font-size: 13px; font-weight: 600; color: var(--bb-text); }
+.bb-tip-steps  { padding-left: 16px; margin: 0; li { font-size: 12px; color: var(--bb-text-dim); line-height: 1.8; } }
 
-.bb-recent-title  { font-size: 14px; font-weight: 600; color: #ffffff; margin-bottom: 12px; }
+.bb-recent-title  { font-size: 14px; font-weight: 600; color: var(--bb-text); margin-bottom: 12px; }
 .bb-empty-uploads {
   display: flex; align-items: center; gap: 10px; padding: 20px;
-  background: #0F1030; border: 1px solid rgba(255,255,255,0.06);
-  border-radius: 12px; color: #3D3D5C; font-size: 13px;
+  background: var(--bb-surface); border: 1px solid var(--bb-border);
+  border-radius: 12px; color: var(--bb-text-muted); font-size: 13px;
 }
 .bb-history-list { display: flex; flex-direction: column; gap: 8px; }
 .bb-history-item {
   display: flex; align-items: center; gap: 12px; padding: 14px 16px;
-  background: #0F1030; border: 1px solid rgba(255,255,255,0.06); border-radius: 10px;
+  background: var(--bb-surface); border: 1px solid var(--bb-border); border-radius: 10px;
 }
 .bb-history-info { flex: 1; }
-.bb-history-name { font-size: 13px; font-weight: 500; color: #ffffff; }
-.bb-history-meta { font-size: 11px; color: #6E6E9A; margin-top: 2px; }
-.bb-history-date { font-size: 11px; color: #4D4D70; white-space: nowrap; }
+.bb-history-name { font-size: 13px; font-weight: 500; color: var(--bb-text); }
+.bb-history-meta { font-size: 11px; color: var(--bb-text-dim); margin-top: 2px; }
+.bb-history-date { font-size: 11px; color: var(--bb-text-muted); white-space: nowrap; }
 .bb-history-delete {
-  color: #4D4D70;
+  color: var(--bb-text-muted);
   &:hover { color: #EF4444; }
 }
 
 .bb-undo-dialog {
-  background: #0F1030; border: 1px solid rgba(255,255,255,0.1);
+  background: var(--bb-surface); border: 1px solid var(--bb-border);
   border-radius: 16px; padding: 28px; width: 92vw; max-width: 420px;
 }
-.bb-undo-title   { font-size: 16px; font-weight: 700; color: #ffffff; margin-bottom: 12px; }
-.bb-undo-text    { font-size: 13px; color: #9090B8; line-height: 1.6; margin-bottom: 20px; strong { color: #ffffff; } }
+.bb-undo-title   { font-size: 16px; font-weight: 700; color: var(--bb-text); margin-bottom: 12px; }
+.bb-undo-text    { font-size: 13px; color: var(--bb-text-soft); line-height: 1.6; margin-bottom: 20px; strong { color: var(--bb-text); } }
 .bb-undo-actions { display: flex; justify-content: flex-end; gap: 10px; }
 </style>

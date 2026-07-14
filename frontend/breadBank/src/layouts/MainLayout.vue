@@ -11,7 +11,7 @@
       <!-- Logo → home (Dashboard) -->
       <div class="bb-logo" role="button" @click="goHome">
         <div class="bb-logo-icon">
-          <q-icon name="account_balance_wallet" size="18px" color="white" />
+          <img src="icons/icon-128x128.png" alt="BreadBank" style="width:100%;height:100%;object-fit:contain" />
         </div>
         <span class="bb-logo-text">BreadBank</span>
       </div>
@@ -39,7 +39,7 @@
       <!-- Other Menu -->
       <div class="bb-section-label bb-section-other">
         <span>Other</span>
-        <q-btn flat round dense icon="add" size="xs" style="color: #6E6E9A" />
+        <q-btn flat round dense icon="add" size="xs" style="color: var(--bb-text-dim)" />
       </div>
       <q-list class="bb-nav">
         <q-item
@@ -66,18 +66,18 @@
         <q-btn
           flat round dense icon="menu" size="sm"
           class="bb-menu-btn"
-          style="color: #6E6E9A"
+          style="color: var(--bb-text-dim)"
           aria-label="Toggle menu"
           @click="drawerOpen = !drawerOpen"
         />
         <q-btn
           flat round dense icon="chevron_left" size="sm"
-          style="color: #6E6E9A"
+          style="color: var(--bb-text-dim)"
           @click="goBack"
         />
         <q-btn
           flat round dense icon="chevron_right" size="sm"
-          style="color: #6E6E9A"
+          style="color: var(--bb-text-dim)"
           @click="router.forward()"
         />
         <div class="bb-sep" />
@@ -149,13 +149,13 @@
             <q-input v-model.number="creditTotalInput" type="number" dense outlined dark prefix="$"
               style="max-width:130px" @keyup.enter="saveCreditTotal" />
             <q-btn no-caps unelevated label="Update" :loading="savingCredit"
-              style="background:linear-gradient(135deg,#6C4ED4,#E040FB);color:#fff;border-radius:8px"
+              style="background:linear-gradient(135deg,var(--bb-accent),var(--bb-accent-2));color:var(--bb-on-accent);border-radius:8px"
               @click="saveCreditTotal" />
           </div>
         </div>
 
         <div class="bb-credit-actions">
-          <q-btn flat no-caps label="Dismiss" style="color:#9090B8" v-close-popup />
+          <q-btn flat no-caps label="Dismiss" style="color: var(--bb-text-soft)" v-close-popup />
         </div>
       </q-card>
     </q-dialog>
@@ -163,11 +163,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useQuasar } from 'quasar';
 import { auth } from 'src/services/auth';
 import { api, type AiStatus } from 'src/services/api';
+import { applyTheme, cachedTheme, cacheTheme } from 'src/services/theme';
 
 interface NavItem {
   icon: string;
@@ -192,6 +193,7 @@ function onNavClick() {
 
 const generalNav: NavItem[] = [
   { icon: 'dashboard', label: 'Dashboard', path: '/app/dashboard' },
+  { icon: 'dashboard_customize', label: 'Dashboard V2', path: '/app/dashboard-v2' },
   { icon: 'receipt_long', label: 'Transactions', path: '/app/transactions' },
   { icon: 'upload_file', label: 'Upload', path: '/app/upload' },
   { icon: 'savings', label: 'Budgets', path: '/app/budgets' },
@@ -219,7 +221,9 @@ const otherNav: NavItem[] = [
 const allNav = [...generalNav, ...otherNav];
 
 const currentTitle = computed(() => {
-  const match = allNav.find((n) => route.path.startsWith(n.path));
+  // Exact match first so /app/dashboard-v2 doesn't fall to /app/dashboard.
+  const match = allNav.find((n) => n.path === route.path)
+    ?? allNav.find((n) => route.path.startsWith(n.path));
   return match ? match.label : 'BreadBank';
 });
 
@@ -238,9 +242,40 @@ function goBack() {
   }
 }
 
-async function logout() {
+function logout() {
   auth.logout();
-  await router.replace('/login');
+  applyTheme('original'); // login screen always shows the default look
+  // Hard redirect (full reload) instead of a router hop: it resets ALL app
+  // state, so logout works even if the UI is wedged by an expired session.
+  window.location.href = '/#/login';
+  window.location.reload();
+}
+
+// ── Session-expiry watchdog ──────────────────────────────────
+// The JWT has a fixed lifetime; when it lapses, log the user out cleanly
+// instead of leaving a half-dead UI. Two triggers:
+//   1. a timer set to the token's exact expiry moment,
+//   2. app resume (PWA/tab wake) — timers don't fire while backgrounded,
+//      which is exactly when sessions usually run out.
+let expiryTimer: ReturnType<typeof setTimeout> | null = null;
+
+function forceLogout() {
+  auth.logout();
+  window.location.href = '/#/login?expired=1';
+  window.location.reload();
+}
+
+function scheduleExpiryLogout() {
+  const exp = auth.tokenExpiresAt();
+  if (!exp) return;
+  const ms = exp - Date.now();
+  if (ms <= 0) { forceLogout(); return; }
+  // Clamp: setTimeout overflows past ~24.8 days.
+  expiryTimer = setTimeout(forceLogout, Math.min(ms, 2_147_000_000));
+}
+
+function onVisibilityChange() {
+  if (document.visibilityState === 'visible' && auth.isExpired()) forceLogout();
 }
 
 // ── Low Claude-credit warning ────────────────────────────────
@@ -302,7 +337,23 @@ async function checkBillReminders() {
   } catch { /* reminders are best-effort; never block the app */ }
 }
 
+onUnmounted(() => {
+  if (expiryTimer) clearTimeout(expiryTimer);
+  document.removeEventListener('visibilitychange', onVisibilityChange);
+});
+
 onMounted(async () => {
+  // Theme: paint instantly from the per-user cache, then confirm from the
+  // server (the account's saved preference wins across devices).
+  const user = auth.getUser();
+  if (user) applyTheme(cachedTheme(user.id));
+  void api.getSettings().then((s) => {
+    applyTheme(s.theme);
+    if (user) cacheTheme(user.id, s.theme);
+  }).catch(() => { /* best-effort */ });
+
+  scheduleExpiryLogout();
+  document.addEventListener('visibilitychange', onVisibilityChange);
   void checkBillReminders();
   // The Claude-credit warning only matters to the app owner (who funds the
   // Anthropic account) — never show it to other users or the demo.
@@ -326,12 +377,12 @@ onMounted(async () => {
 
 <style lang="scss">
 .bb-layout {
-  background-color: #0A0A1B;
+  background-color: var(--bb-bg);
 }
 
 .bb-sidebar {
-  background-color: #0A0A1B !important;
-  border-right: 1px solid rgba(255, 255, 255, 0.06) !important;
+  background-color: var(--bb-bg) !important;
+  border-right: 1px solid var(--bb-border) !important;
 }
 
 .bb-logo {
@@ -347,7 +398,7 @@ onMounted(async () => {
   &-icon {
     width: 32px;
     height: 32px;
-    background: linear-gradient(135deg, #6C4ED4, #E040FB);
+    background: linear-gradient(135deg,var(--bb-accent),var(--bb-accent-2));
     border-radius: 8px;
     display: flex;
     align-items: center;
@@ -358,14 +409,14 @@ onMounted(async () => {
   &-text {
     font-size: 16px;
     font-weight: 700;
-    color: #ffffff;
+    color: var(--bb-text);
     letter-spacing: 0.2px;
   }
 }
 
 .bb-logout-btn {
   color: var(--bb-text) !important;
-  background: rgba(236, 64, 251, 0.08) !important;
+  background: rgba(var(--bb-accent2-rgb), 0.08) !important;
   border: 1px solid var(--bb-border-hover) !important;
   border-radius: 6px !important;
   padding: 4px 10px !important;
@@ -375,8 +426,8 @@ onMounted(async () => {
   transition: all 0.2s ease !important;
 
   &:hover {
-    background: rgba(236, 64, 251, 0.15) !important;
-    border-color: rgba(236, 64, 251, 0.3) !important;
+    background: rgba(var(--bb-accent2-rgb), 0.15) !important;
+    border-color: rgba(var(--bb-accent2-rgb), 0.3) !important;
   }
 }
 
@@ -385,7 +436,7 @@ onMounted(async () => {
   font-weight: 600;
   letter-spacing: 0.8px;
   text-transform: uppercase;
-  color: #4D4D70;
+  color: var(--bb-text-muted);
   padding: 10px 16px 4px;
 }
 
@@ -405,15 +456,15 @@ onMounted(async () => {
   border-radius: 8px;
   min-height: 36px !important;
   padding: 0 8px !important;
-  color: #6E6E9A;
+  color: var(--bb-text-dim);
   margin-bottom: 2px;
   font-size: 13px;
   font-weight: 500;
   transition: all 0.15s ease;
 
   &:hover {
-    background: rgba(108, 78, 212, 0.1) !important;
-    color: #c0b0f0 !important;
+    background: rgba(var(--bb-accent-rgb), 0.1) !important;
+    color: var(--bb-text-soft) !important;
   }
 
   .q-item__section--avatar {
@@ -423,8 +474,8 @@ onMounted(async () => {
 }
 
 .bb-nav-active {
-  background: rgba(108, 78, 212, 0.18) !important;
-  color: #ffffff !important;
+  background: rgba(var(--bb-accent-rgb), 0.18) !important;
+  color: var(--bb-text) !important;
   position: relative;
 
   &::after {
@@ -434,7 +485,7 @@ onMounted(async () => {
     top: 6px;
     bottom: 6px;
     width: 3px;
-    background: #6C4ED4;
+    background: var(--bb-accent);
     border-radius: 0 3px 3px 0;
   }
 }
@@ -444,8 +495,8 @@ onMounted(async () => {
 }
 
 .bb-header {
-  background-color: #0A0A1B !important;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  background-color: var(--bb-bg) !important;
+  border-bottom: 1px solid var(--bb-border);
   box-shadow: none !important;
 }
 
@@ -470,13 +521,13 @@ onMounted(async () => {
 .bb-breadcrumb {
   font-size: 13px;
   font-weight: 500;
-  color: #ffffff;
+  color: var(--bb-text);
 }
 
 /* ── Bottom tab bar (phones) ───────────────────────────────── */
 .bb-tabbar {
-  background: #0D0D24 !important;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--bb-surface-2) !important;
+  border-top: 1px solid var(--bb-border);
   // Keep the bar above the iPhone home indicator in standalone (PWA) mode.
   padding-bottom: env(safe-area-inset-bottom);
 }
@@ -486,40 +537,40 @@ onMounted(async () => {
   display: flex; flex-direction: column; align-items: center; gap: 2px;
   padding: 8px 0 6px;
   font-size: 10px; font-weight: 600;
-  color: #6E6E9A; text-decoration: none; cursor: pointer;
+  color: var(--bb-text-dim); text-decoration: none; cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }
-.bb-tab-active { color: #8B6FEC; }
+.bb-tab-active { color: var(--bb-accent-light); }
 
 /* ── Low-credit warning dialog ─────────────────────────────── */
 .bb-credit-card {
   width: 420px; max-width: 92vw;
-  background: #0F1030 !important; color: #E6E6F5;
-  border: 1px solid rgba(255,255,255,0.08);
+  background: var(--bb-surface) !important; color: var(--bb-text-soft);
+  border: 1px solid var(--bb-border);
   border-radius: 16px; padding: 24px;
 }
 .bb-credit-hdr {
   display: flex; align-items: center; gap: 10px;
-  font-size: 17px; font-weight: 700; color: #F8FAFF; margin-bottom: 16px;
+  font-size: 17px; font-weight: 700; color: var(--bb-text); margin-bottom: 16px;
 }
 .bb-credit-balance { text-align: center; margin-bottom: 16px; }
 .bb-credit-remaining { font-size: 34px; font-weight: 800; letter-spacing: -0.5px; }
-.bb-credit-sub { font-size: 12px; color: #8F8FB5; margin-top: 2px; }
+.bb-credit-sub { font-size: 12px; color: var(--bb-text-soft); margin-top: 2px; }
 .bb-credit-track {
   height: 7px; margin-top: 12px;
   background: rgba(255,255,255,0.07); border-radius: 4px; overflow: hidden;
 }
 .bb-credit-fill { height: 100%; border-radius: 4px; transition: width 0.5s ease; }
-.bb-credit-body { font-size: 13px; line-height: 1.5; color: #C6C6E5; margin-bottom: 16px; }
+.bb-credit-body { font-size: 13px; line-height: 1.5; color: var(--bb-text-soft); margin-bottom: 16px; }
 .bb-credit-link {
   display: inline-flex; align-items: center; gap: 6px;
-  font-size: 13px; font-weight: 600; color: #8B6FEC; text-decoration: none;
-  &:hover { color: #B79DFF; }
+  font-size: 13px; font-weight: 600; color: var(--bb-accent-light); text-decoration: none;
+  &:hover { color: var(--bb-accent-light); }
 }
 .bb-credit-topup {
-  margin-top: 18px; padding-top: 16px; border-top: 1px solid rgba(255,255,255,0.07);
+  margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--bb-border);
 }
-.bb-credit-topup-lbl { font-size: 12px; color: #8F8FB5; margin-bottom: 8px; }
+.bb-credit-topup-lbl { font-size: 12px; color: var(--bb-text-soft); margin-bottom: 8px; }
 .bb-credit-actions { display: flex; justify-content: flex-end; margin-top: 16px; }
 
 </style>
