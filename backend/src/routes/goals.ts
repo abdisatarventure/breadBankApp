@@ -77,7 +77,10 @@ async function ensureReserveGoal(userId: number): Promise<number> {
 // Per-month allocation snapshot used by GET / suggest / apply so they all agree.
 async function monthlyState(userId: number, reserveId: number) {
   const mk = currentMonthKey();
-  const { income, net } = await monthTotals(userId);
+  const [{ income, net }, saved] = await Promise.all([
+    monthTotals(userId),
+    actualSavings(userId),
+  ]);
 
   const res = await getPool().request()
     .input('userId', sql.Int, userId)
@@ -85,29 +88,40 @@ async function monthlyState(userId: number, reserveId: number) {
     .input('reserveId', sql.Int, reserveId)
     .query(`
       SELECT
-        ISNULL(SUM(CASE WHEN goal_id = @reserveId THEN amount ELSE 0 END), 0) AS reserveThisMonth,
-        ISNULL(SUM(CASE WHEN goal_id <> @reserveId THEN amount ELSE 0 END), 0) AS othersThisMonth
+        ISNULL(SUM(CASE WHEN goal_id <> @reserveId AND month_key = @mk THEN amount ELSE 0 END), 0) AS othersThisMonth,
+        ISNULL(SUM(CASE WHEN goal_id <> @reserveId THEN amount ELSE 0 END), 0) AS othersLifetime
       FROM savings_contributions
-      WHERE user_id = @userId AND month_key = @mk
+      WHERE user_id = @userId
     `);
-  const row = res.recordset[0] as { reserveThisMonth: number; othersThisMonth: number };
+  const row = res.recordset[0] as { othersThisMonth: number; othersLifetime: number };
+  const othersThisMonth = Number(row.othersThisMonth);
+  const othersLifetime = Number(row.othersLifetime);
 
   // "Pay yourself first" reserve target = 20% of this month's INCOME (not of the
   // leftover), so the recommendation is a straight 20% of what you earned.
   const reserveTarget = round2(Math.max(0, income) * RESERVE_PCT);
-  const reserveThisMonth = Number(row.reserveThisMonth);
-  const othersThisMonth = Number(row.othersThisMonth);
-  // What's left of this month's net savings for purchase goals, after setting the
-  // reserve aside and whatever's already been allocated.
+  // The reserve is funded by REAL savings deposits this month, not a manual ledger.
+  const reserveThisMonth = saved.thisMonth;
+  const reserveRemaining = Math.max(0, round2(reserveTarget - reserveThisMonth));
+
+  // "Available for goals" is a STOCK: the real money sitting in savings that
+  // hasn't been earmarked to a specific purchase goal yet.
+  const availableForGoals = Math.max(0, round2(saved.lifetime - othersLifetime));
+  // The monthly flow pot the AI split works from (80% of this month's net, less
+  // what's already allocated) — kept for the "split this month's leftover" tool.
   const available = Math.max(0, round2(net - reserveTarget - othersThisMonth));
 
   return {
     income,
     net,
+    savedThisMonth: saved.thisMonth,
+    savedLifetime: saved.lifetime,
     reserveTarget,
     reserveThisMonth,
-    reserveRemaining: Math.max(0, round2(reserveTarget - reserveThisMonth)),
+    reserveRemaining,
     othersThisMonth,
+    othersLifetime,
+    availableForGoals,
     available,
   };
 }
@@ -119,7 +133,7 @@ router.get('/', async (req: AuthRequest, res: Response) => {
     const userId = req.userId!;
     const reserveId = await ensureReserveGoal(userId);
 
-    const [goalsRes, reserveRes, state] = await Promise.all([
+    const [goalsRes, state] = await Promise.all([
       getPool().request()
         .input('userId', sql.Int, userId)
         .query(`
@@ -131,13 +145,6 @@ router.get('/', async (req: AuthRequest, res: Response) => {
           WHERE g.user_id = @userId AND g.is_reserve = 0
           GROUP BY g.id, g.name, g.target_amount, g.target_date, g.icon, g.color, g.priority, g.created_at
           ORDER BY g.priority DESC, g.created_at
-        `),
-      getPool().request()
-        .input('userId', sql.Int, userId)
-        .input('reserveId', sql.Int, reserveId)
-        .query(`
-          SELECT ISNULL(SUM(amount), 0) AS savedLifetime
-          FROM savings_contributions WHERE user_id = @userId AND goal_id = @reserveId
         `),
       monthlyState(userId, reserveId),
     ]);
@@ -159,17 +166,18 @@ router.get('/', async (req: AuthRequest, res: Response) => {
       };
     });
 
-    const savedLifetime = Number((reserveRes.recordset[0] as { savedLifetime: number }).savedLifetime);
-
     res.json({
       goals,
       reserve: {
         id: reserveId,
-        savedLifetime,
+        // Real money in savings (from the 'Savings' category), not a manual ledger.
+        savedLifetime: state.savedLifetime,
         savedThisMonth: state.reserveThisMonth,
         targetThisMonth: state.reserveTarget,
         remainingThisMonth: state.reserveRemaining,
-        pct: state.reserveTarget > 0 ? (state.reserveThisMonth / state.reserveTarget) * 100 : 0,
+        pct: state.reserveTarget > 0
+          ? Math.min(100, (state.reserveThisMonth / state.reserveTarget) * 100)
+          : (state.reserveThisMonth > 0 ? 100 : 0),
       },
       summary: {
         totalSaved: goals.reduce((a, g) => a + g.saved, 0),
@@ -177,8 +185,19 @@ router.get('/', async (req: AuthRequest, res: Response) => {
       },
       reservePct: RESERVE_PCT,
       netSavings: state.net,
+      // The real savings stock and how much of it is free to put toward goals.
+      inSavings: state.savedLifetime,
+      savedThisMonth: state.savedThisMonth,
+      availableForGoals: state.availableForGoals,
       allocatedToOthersThisMonth: state.othersThisMonth,
       available: state.available,
+      // Reminder to actually move money into savings: fires when this month's real
+      // savings deposits fall short of your 20% "pay yourself first" target.
+      moveReminder: {
+        needed: state.reserveRemaining,
+        savedThisMonth: state.savedThisMonth,
+        targetThisMonth: state.reserveTarget,
+      },
     });
   } catch (err) {
     console.error(err);
@@ -294,28 +313,17 @@ router.delete('/:id', async (req: AuthRequest, res: Response) => {
 
 // POST /api/goals/reserve/fund — set aside this month's 20% into the Savings
 // bucket without touching other goals.
+// The reserve is now funded automatically by real 'Savings' deposits, so this is
+// informational only — it reports how much more you still need to move this month.
 router.post('/reserve/fund', async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.userId!;
     const reserveId = await ensureReserveGoal(userId);
     const state = await monthlyState(userId, reserveId);
-    if (state.reserveRemaining <= 0) {
-      res.json({ success: true, funded: 0 });
-      return;
-    }
-    await getPool().request()
-      .input('userId', sql.Int, userId)
-      .input('goalId', sql.Int, reserveId)
-      .input('amount', sql.Decimal(12, 2), state.reserveRemaining)
-      .input('mk', sql.Char(7), currentMonthKey())
-      .query(`
-        INSERT INTO savings_contributions (user_id, goal_id, amount, month_key)
-        VALUES (@userId, @goalId, @amount, @mk)
-      `);
-    res.json({ success: true, funded: state.reserveRemaining });
+    res.json({ success: true, funded: 0, needed: state.reserveRemaining });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Failed to fund savings reserve' });
+    res.status(500).json({ error: 'Failed to read savings reserve' });
   }
 });
 
@@ -353,14 +361,14 @@ router.post('/suggest', async (req: AuthRequest, res: Response) => {
     }));
 
     if (goals.length === 0) {
-      res.json({ plan: [], available: state.available });
+      res.json({ plan: [], available: state.availableForGoals });
       return;
     }
 
     const splitInput: SavingsSplitGoal[] = goals.map((g) => ({
       goalId: g.id, name: g.name, remaining: g.remaining, targetDate: g.targetDate, priority: g.priority,
     }));
-    const split = await generateSavingsSplit(userId, splitInput, state.available);
+    const split = await generateSavingsSplit(userId, splitInput, state.availableForGoals);
     const byId = new Map(split.map((s) => [s.goalId, s]));
 
     const plan = goals.map((g) => ({
@@ -370,7 +378,7 @@ router.post('/suggest', async (req: AuthRequest, res: Response) => {
       note: byId.get(g.id)?.note ?? '',
     }));
 
-    res.json({ plan, available: state.available });
+    res.json({ plan, available: state.availableForGoals });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to generate savings split' });
@@ -402,9 +410,11 @@ router.post('/apply', async (req: AuthRequest, res: Response) => {
 
     const state = await monthlyState(userId, reserveId);
     const total = clean.reduce((a, i) => a + i.amount, 0);
-    if (total > state.available + 0.01) {
+    // You can only earmark money you've actually saved (the real savings stock
+    // that isn't already committed to another goal).
+    if (total > state.availableForGoals + 0.01) {
       res.status(400).json({
-        error: `That allocates $${total.toFixed(2)} but only $${state.available.toFixed(2)} is available after the ${Math.round(RESERVE_PCT * 100)}% savings reserve.`,
+        error: `That earmarks $${total.toFixed(2)} but only $${state.availableForGoals.toFixed(2)} of your savings is available for goals.`,
       });
       return;
     }
@@ -414,18 +424,6 @@ router.post('/apply', async (req: AuthRequest, res: Response) => {
     const tx = pool.transaction();
     await tx.begin();
     try {
-      // Pay yourself first: top the reserve up to this month's 20% target.
-      if (state.reserveRemaining > 0) {
-        await tx.request()
-          .input('userId', sql.Int, userId)
-          .input('goalId', sql.Int, reserveId)
-          .input('amount', sql.Decimal(12, 2), state.reserveRemaining)
-          .input('mk', sql.Char(7), mk)
-          .query(`
-            INSERT INTO savings_contributions (user_id, goal_id, amount, month_key)
-            VALUES (@userId, @goalId, @amount, @mk)
-          `);
-      }
       for (const i of clean) {
         await tx.request()
           .input('userId', sql.Int, userId)
@@ -444,7 +442,7 @@ router.post('/apply', async (req: AuthRequest, res: Response) => {
       throw e;
     }
 
-    res.json({ success: true, applied: clean.length, total, reserved: state.reserveRemaining });
+    res.json({ success: true, applied: clean.length, total, reserved: 0 });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to apply allocation' });

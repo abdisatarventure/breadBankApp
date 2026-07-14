@@ -373,8 +373,16 @@ export interface SavingsGoalsData {
   summary: { totalSaved: number; totalTarget: number };
   reservePct: number;          // 0.20
   netSavings: number;          // this month's leftover (== dashboard Net Savings)
+  inSavings: number;           // real money in the Savings category (lifetime)
+  savedThisMonth: number;      // real Savings deposits this month
+  availableForGoals: number;   // real savings not yet earmarked to a purchase goal
   allocatedToOthersThisMonth: number;
   available: number;           // the 80% pot still free for purchase goals
+  moveReminder: {              // nudge to actually move money into savings
+    needed: number;            // still short of this month's 20% target
+    savedThisMonth: number;
+    targetThisMonth: number;
+  };
 }
 
 export interface SavingsSplitItem {
