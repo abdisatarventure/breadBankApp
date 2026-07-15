@@ -316,7 +316,6 @@
                 <div class="bb-chart-title">Spending by Category</div>
                 <div class="bb-chart-sub">This month's breakdown</div>
               </div>
-              <q-btn flat round dense icon="more_vert" size="sm" style="color: var(--bb-text-dim)" />
             </div>
             <VueApexCharts v-if="hasCategoryData" :key="`cat-${hideAmounts}`" type="bar" height="280" :options="categoryOpts" :series="categorySeries" />
             <div v-else class="bb-chart-empty">
@@ -334,7 +333,6 @@
                 <div class="bb-chart-title">Monthly Spending Trend</div>
                 <div class="bb-chart-sub">Last 6 months</div>
               </div>
-              <q-btn flat round dense icon="more_vert" size="sm" style="color: var(--bb-text-dim)" />
             </div>
             <VueApexCharts :key="`trend-${hideAmounts}`" type="area" height="280" :options="trendOpts" :series="trendSeries" />
           </div>
@@ -714,7 +712,7 @@ const trendYMax = computed(() => {
 });
 
 const trendOpts = computed<ApexOptions>(() => ({
-  chart: { type: 'area', background: 'transparent', toolbar: { show: false }, foreColor: '#6E6E9A' },
+  chart: { type: 'area', background: 'transparent', toolbar: { show: false }, zoom: { enabled: false }, foreColor: '#6E6E9A' },
   colors: [themeColor('--bb-accent', '#6C4ED4'), '#22C55E'],
   fill: { type: 'gradient', gradient: { shadeIntensity: 1, opacityFrom: 0.25, opacityTo: 0.02 } },
   stroke: { curve: 'smooth', width: 2 },
@@ -736,7 +734,7 @@ const trendOpts = computed<ApexOptions>(() => ({
 }));
 
 const categoryOpts = computed<ApexOptions>(() => ({
-  chart: { type: 'bar', background: 'transparent', toolbar: { show: false }, foreColor: '#6E6E9A' },
+  chart: { type: 'bar', background: 'transparent', toolbar: { show: false }, zoom: { enabled: false }, foreColor: '#6E6E9A' },
   plotOptions: { bar: { horizontal: true, borderRadius: 4, borderRadiusApplication: 'end', barHeight: '60%' } },
   colors: [themeColor('--bb-accent', '#6C4ED4')],
   dataLabels: {

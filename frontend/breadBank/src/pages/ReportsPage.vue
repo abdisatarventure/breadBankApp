@@ -252,6 +252,7 @@ const categoryChartSeries = computed(() => [
 const categoryChartOptions = computed<ApexOptions>(() => ({
   chart: {
     toolbar: { show: false },
+    zoom: { enabled: false },
     foreColor: '#C6C6E5',
   },
   plotOptions: {
@@ -351,7 +352,7 @@ const monthlyChartSeries = computed(() => [
 ]);
 
 const monthlyChartOptions = computed<ApexOptions>(() => ({
-  chart: { toolbar: { show: false }, foreColor: '#C6C6E5', stacked: false },
+  chart: { toolbar: { show: false }, zoom: { enabled: false }, foreColor: '#C6C6E5', stacked: false },
   plotOptions: { bar: { horizontal: false, columnWidth: '62%', borderRadius: 4 } },
   dataLabels: { enabled: false },
   legend: { show: true, position: 'top', horizontalAlign: 'right', labels: { colors: '#B0B0C3' } },

@@ -687,7 +687,7 @@ const trendYMax = computed(() => {
   return Math.max(1000, Math.ceil(peak / 1000) * 1000);
 });
 const trendOpts = computed<ApexOptions>(() => ({
-  chart: { type: 'area', background: 'transparent', toolbar: { show: false }, foreColor: '#6E6E9A' },
+  chart: { type: 'area', background: 'transparent', toolbar: { show: false }, zoom: { enabled: false }, foreColor: '#6E6E9A' },
   colors: [themeColor('--bb-accent', '#6C4ED4'), '#22C55E'],
   fill: { type: 'gradient', gradient: { shadeIntensity: 1, opacityFrom: 0.25, opacityTo: 0.02 } },
   stroke: { curve: 'smooth', width: 2 },
@@ -706,7 +706,7 @@ const trendOpts = computed<ApexOptions>(() => ({
   tooltip: { theme: 'dark', y: { formatter: (v: number) => hideAmounts.value ? '••••' : `$${v.toLocaleString()}` } },
 }));
 const categoryOpts = computed<ApexOptions>(() => ({
-  chart: { type: 'bar', background: 'transparent', toolbar: { show: false }, foreColor: '#6E6E9A' },
+  chart: { type: 'bar', background: 'transparent', toolbar: { show: false }, zoom: { enabled: false }, foreColor: '#6E6E9A' },
   plotOptions: { bar: { horizontal: true, borderRadius: 4, borderRadiusApplication: 'end', barHeight: '60%' } },
   colors: [themeColor('--bb-accent', '#6C4ED4')],
   dataLabels: {

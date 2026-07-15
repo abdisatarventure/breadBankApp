@@ -39,7 +39,6 @@
       <!-- Other Menu -->
       <div class="bb-section-label bb-section-other">
         <span>Other</span>
-        <q-btn flat round dense icon="add" size="xs" style="color: var(--bb-text-dim)" />
       </div>
       <q-list class="bb-nav">
         <q-item
