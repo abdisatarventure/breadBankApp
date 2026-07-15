@@ -11,7 +11,7 @@
       <!-- Logo → home (Dashboard) -->
       <div class="bb-logo" role="button" @click="goHome">
         <div class="bb-logo-icon">
-          <img src="icons/icon-128x128.png" alt="BreadBank" style="width:100%;height:100%;object-fit:contain" />
+          <img src="icons/breadbank-logo.png" alt="BreadBank" style="width:100%;height:100%;object-fit:contain;background:transparent" />
         </div>
         <span class="bb-logo-text">BreadBank</span>
       </div>
@@ -396,9 +396,9 @@ onMounted(async () => {
   &:hover { opacity: 0.85; }
 
   &-icon {
-    width: 32px;
-    height: 32px;
-    background: linear-gradient(135deg,var(--bb-accent),var(--bb-accent-2));
+    width: 36px;
+    height: 36px;
+    background: transparent;
     border-radius: 8px;
     display: flex;
     align-items: center;

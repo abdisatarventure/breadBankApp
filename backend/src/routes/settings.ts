@@ -4,7 +4,7 @@ import { AuthRequest } from '../middleware/auth';
 
 const router = Router();
 
-const THEMES = ['original', 'black', 'midnight', 'gold', 'light', 'brown', 'sage'];
+const THEMES = ['original', 'black', 'midnight', 'gold', 'light', 'brown', 'sage', 'pink'];
 
 // GET /api/settings — per-user UI preferences (currently just the theme).
 router.get('/', async (req: AuthRequest, res: Response) => {

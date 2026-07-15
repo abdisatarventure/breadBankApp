@@ -99,6 +99,23 @@ body.theme-light, body.theme-brown {
   }
 }
 
+// Dark Pink — plum-black gradient, rosé primaries, platinum accent.
+body.theme-pink {
+  --bb-bg: #14090E; --bb-surface: #2A1620; --bb-surface-2: #3A1F2D;
+  --bb-border: rgba(255, 255, 255, 0.08); --bb-border-hover: rgba(232, 147, 174, 0.35);
+  --bb-accent: #E893AE; --bb-accent-light: #F2AFC4; --bb-accent-2: #C7C9CC;
+  --bb-on-accent: #2A0E1A; --bb-accent-rgb: 232, 147, 174; --bb-accent2-rgb: 199, 201, 204;
+  --bb-text: #F7EFF2; --bb-text-soft: #D9CED4; --bb-text-dim: #B8B0B4; --bb-text-muted: #7E7378;
+  --bb-grad-deep-a: #4A2438; --bb-grad-deep-b: #22101A;
+
+  background: linear-gradient(160deg, #3A1826 0%, #241019 40%, #14090E 78%, #0E060A 100%) fixed !important;
+  .q-page, .bb-layout { background: transparent !important; }
+  .bb-header, .bb-sidebar, .bb-tabbar {
+    background: rgba(20, 9, 14, 0.74) !important;
+    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  }
+}
+
 // Dark Sage — deep green gradient backdrop, frosted glass cards, gold accent.
 body.theme-sage {
   --bb-bg: #0C110E;

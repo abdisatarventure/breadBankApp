@@ -8,7 +8,7 @@
         <div class="bb-boot-inner">
           <div class="bb-boot-logo">
             <div class="bb-boot-icon">
-              <img src="icons/icon-128x128.png" alt="BreadBank" style="width:100%;height:100%;object-fit:contain" />
+              <img src="icons/breadbank-logo.png" alt="BreadBank" style="width:100%;height:100%;object-fit:contain;background:transparent" />
             </div>
             <span class="bb-boot-name">BreadBank</span>
           </div>
@@ -34,7 +34,7 @@
         <div class="bb-art-content">
           <div class="bb-brand">
             <div class="bb-brand-icon">
-              <img src="icons/icon-128x128.png" alt="BreadBank" style="width:100%;height:100%;object-fit:contain" />
+              <img src="icons/breadbank-logo.png" alt="BreadBank" style="width:100%;height:100%;object-fit:contain;background:transparent" />
             </div>
             <span>BreadBank</span>
           </div>

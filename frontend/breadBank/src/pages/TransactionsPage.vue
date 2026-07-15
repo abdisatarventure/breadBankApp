@@ -398,7 +398,6 @@ function quickCategorize(tx: Transaction) {
     actions: categories.value.map(c => ({
       label: c.name,
       icon: c.icon || 'label',
-      color: 'purple-3',
       id: String(c.id),
     })),
   }).onOk((action: { id: string }) => {

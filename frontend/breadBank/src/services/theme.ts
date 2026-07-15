@@ -9,6 +9,7 @@ export const THEMES = [
   { id: 'light',    label: 'White', colors: ['#FFFFFF', '#1A1A18', '#B08D2E'] },
   { id: 'midnight', label: 'Midnight Blue', colors: ['#0B1220', '#4C7DFF', '#EFF3FA'] },
   { id: 'brown',    label: 'Brown', colors: ['#F7F1EA', '#6F4E37', '#A67C52'] },
+  { id: 'pink',     label: "Abrars hot girl summer", colors: ['#14090E', '#E893AE', '#C7C9CC'] },
   { id: 'sage',     label: 'Dark Sage', colors: ['#0C110E', '#9FBE8C', '#C9A227'] },
 ] as const;
 
@@ -21,7 +22,7 @@ function isTheme(t: string): t is ThemeName {
 export function applyTheme(theme: string | null | undefined): void {
   const name: ThemeName = theme && isTheme(theme) ? theme : 'original';
   document.body.classList.remove(
-    'theme-original', 'theme-black', 'theme-midnight', 'theme-gold', 'theme-light', 'theme-brown', 'theme-sage', 'theme-green',
+    'theme-original', 'theme-black', 'theme-midnight', 'theme-gold', 'theme-light', 'theme-brown', 'theme-sage', 'theme-pink', 'theme-green',
   );
   document.body.classList.add(`theme-${name}`);
 }
