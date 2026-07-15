@@ -107,6 +107,45 @@ router.delete('/:id', async (req: AuthRequest, res: Response) => {
   }
 });
 
+// PUT /api/categories/:id — update color/icon (any visible category; system
+// categories are shared, so a recolor applies to every user) and name (own
+// custom categories only).
+router.put('/:id', async (req: AuthRequest, res: Response) => {
+  try {
+    const id = parseInt(req.params.id ?? '0', 10);
+    const { color, icon, name } = req.body as { color?: string; icon?: string; name?: string };
+    if (!Number.isInteger(id) || id < 1) { res.status(400).json({ error: 'Invalid category id' }); return; }
+    if (color !== undefined && !/^#[0-9a-fA-F]{6}$/.test(color)) {
+      res.status(400).json({ error: 'color must be a #rrggbb hex value' });
+      return;
+    }
+    const pool = getPool();
+    const owned = await pool.request()
+      .input('id', sql.Int, id).input('userId', sql.Int, req.userId)
+      .query('SELECT user_id FROM categories WHERE id = @id AND (user_id = @userId OR user_id IS NULL)');
+    const row = owned.recordset[0] as { user_id: number | null } | undefined;
+    if (!row) { res.status(404).json({ error: 'Category not found' }); return; }
+    if (name !== undefined && row.user_id === null) {
+      res.status(403).json({ error: 'System category names cannot be changed' });
+      return;
+    }
+    await pool.request()
+      .input('id', sql.Int, id)
+      .input('color', sql.NVarChar(20), color ?? null)
+      .input('icon', sql.NVarChar(50), icon ?? null)
+      .input('name', sql.NVarChar(100), name?.trim() || null)
+      .query(`UPDATE categories SET
+                color = COALESCE(@color, color),
+                icon  = COALESCE(@icon, icon),
+                name  = COALESCE(@name, name)
+              WHERE id = @id`);
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to update category' });
+  }
+});
+
 // GET unknown transactions (needs manual categorization)
 router.get('/unknown', async (req: AuthRequest, res: Response) => {
   try {

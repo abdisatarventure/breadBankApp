@@ -36,6 +36,22 @@ function applyTransactionFilters(request: SqlRequest, query: ExpressRequest['que
   return where;
 }
 
+
+// Learn (or update) this user's merchant → category rule so future imports of
+// the same payee are filed automatically. Shared by every categorize endpoint.
+async function upsertMerchantRule(userId: number, pattern: string, categoryId: number): Promise<void> {
+  await getPool().request()
+    .input('userId', sql.Int, userId)
+    .input('pattern', sql.NVarChar(200), pattern)
+    .input('categoryId', sql.Int, categoryId)
+    .query(`
+      IF EXISTS (SELECT 1 FROM merchant_rules WHERE merchant_pattern = @pattern AND user_id = @userId)
+        UPDATE merchant_rules SET category_id = @categoryId WHERE merchant_pattern = @pattern AND user_id = @userId
+      ELSE
+        INSERT INTO merchant_rules (user_id, merchant_pattern, category_id) VALUES (@userId, @pattern, @categoryId)
+    `);
+}
+
 // GET /api/transactions
 router.get('/', async (req: AuthRequest, res: Response) => {
   try {
@@ -224,16 +240,7 @@ router.put('/bulk/categorize', async (req: AuthRequest, res: Response) => {
         AND merchant IS NOT NULL AND merchant <> ''
     `)).recordset as { merchant: string }[];
     for (const { merchant } of merchants) {
-      await pool.request()
-        .input('userId', sql.Int, req.userId)
-        .input('pattern', sql.NVarChar(200), merchant)
-        .input('categoryId', sql.Int, categoryId as number)
-        .query(`
-          IF EXISTS (SELECT 1 FROM merchant_rules WHERE merchant_pattern = @pattern AND user_id = @userId)
-            UPDATE merchant_rules SET category_id = @categoryId WHERE merchant_pattern = @pattern AND user_id = @userId
-          ELSE
-            INSERT INTO merchant_rules (user_id, merchant_pattern, category_id) VALUES (@userId, @pattern, @categoryId)
-        `);
+      await upsertMerchantRule(req.userId!, merchant, categoryId as number);
     }
 
     res.json({ success: true, updated });
@@ -266,16 +273,7 @@ router.put('/reclassify-merchant', async (req: AuthRequest, res: Response) => {
       .input('categoryId', sql.Int, cat)
       .query(`UPDATE transactions SET category_id = @categoryId WHERE user_id = @userId AND merchant = @merchant`);
 
-    await pool.request()
-      .input('userId', sql.Int, req.userId)
-      .input('pattern', sql.NVarChar(200), merchant.trim())
-      .input('categoryId', sql.Int, cat)
-      .query(`
-        IF EXISTS (SELECT 1 FROM merchant_rules WHERE merchant_pattern = @pattern AND user_id = @userId)
-          UPDATE merchant_rules SET category_id = @categoryId WHERE merchant_pattern = @pattern AND user_id = @userId
-        ELSE
-          INSERT INTO merchant_rules (user_id, merchant_pattern, category_id) VALUES (@userId, @pattern, @categoryId)
-      `);
+    await upsertMerchantRule(req.userId!, merchant.trim(), cat);
 
     res.json({ success: true, updated: upd.rowsAffected[0] ?? 0 });
   } catch (err) {
@@ -340,16 +338,7 @@ router.put('/:id', async (req: AuthRequest, res: Response) => {
 
     // Learn the merchant → category mapping for this user
     if (merchant && categoryId) {
-      await pool.request()
-        .input('userId',     sql.Int,           req.userId)
-        .input('pattern',    sql.NVarChar(200), merchant)
-        .input('categoryId', sql.Int,           categoryId)
-        .query(`
-          IF EXISTS (SELECT 1 FROM merchant_rules WHERE merchant_pattern = @pattern AND user_id = @userId)
-            UPDATE merchant_rules SET category_id = @categoryId WHERE merchant_pattern = @pattern AND user_id = @userId
-          ELSE
-            INSERT INTO merchant_rules (user_id, merchant_pattern, category_id) VALUES (@userId, @pattern, @categoryId)
-        `);
+      await upsertMerchantRule(req.userId!, merchant, categoryId);
     }
 
     res.json({ success: true });

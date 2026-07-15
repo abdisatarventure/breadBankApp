@@ -248,8 +248,18 @@
     <q-dialog v-model="categoryDialogOpen">
       <div class="bb-cat-dialog">
         <div class="bb-cat-dialog-hdr">
-          <div class="bb-category-icon" :style="{ background: activeCategory?.color || '#6C4ED4' }">
+          <div class="bb-category-icon" :style="{ background: activeCategory?.color || '#6C4ED4' }" style="cursor:pointer">
             <q-icon :name="activeCategory?.icon || 'label'" size="16px" color="white" />
+            <q-menu anchor="bottom left" self="top left" class="bb-picker-menu">
+              <div class="bb-color-grid">
+                <button
+                  v-for="col in COLOR_OPTIONS" :key="col" type="button" v-close-popup
+                  class="bb-color-cell" :style="{ background: col }"
+                  @click="recolorCategory(col)"
+                />
+              </div>
+            </q-menu>
+            <q-tooltip>Change this category's color</q-tooltip>
           </div>
           <div class="bb-cat-dialog-titles">
             <div class="bb-cat-dialog-title">{{ activeCategory?.name }}</div>
@@ -371,6 +381,19 @@ const categoryOptions = computed(() => categories.value.map((category) => ({
 // ── Drill into a category to review / re-assign transactions ──────
 const categoryDialogOpen = ref(false);
 const activeCategory = ref<Category | null>(null);
+
+// Change the open category's color (persists for the account; system
+// categories are shared, so the new color shows for every user).
+async function recolorCategory(color: string) {
+  if (!activeCategory.value) return;
+  try {
+    await api.updateCategory(activeCategory.value.id, { color });
+    activeCategory.value = { ...activeCategory.value, color };
+    await loadData();
+  } catch (e) {
+    console.error(e);
+  }
+}
 const categoryTxs = ref<Transaction[]>([]);
 const categoryTxLoading = ref(false);
 const reassigningId = ref<number | null>(null);

@@ -464,6 +464,8 @@ export const api = {
   getUnknownTransactions: () => request<Transaction[]>('/categories/unknown'),
   createCategory: (name: string, icon?: string, color?: string) =>
     request<Category>('/categories', { method: 'POST', body: JSON.stringify({ name, icon, color }) }),
+  updateCategory: (id: number, body: { color?: string; icon?: string; name?: string }) =>
+    request<{ success: boolean }>(`/categories/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
   deleteCategory: (id: number) =>
     request<{ success: boolean }>(`/categories/${id}`, { method: 'DELETE' }),
 
