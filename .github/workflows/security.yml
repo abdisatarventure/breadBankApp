@@ -39,18 +39,14 @@ jobs:
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@0.33.1
         env:
-          # ghcr.io rate-limits the vuln DB pull, which kills the job in seconds;
-          # fall back across mirrors.
+          # ghcr.io rate-limits the vuln DB pull; fall back across mirrors.
           TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db:2,ghcr.io/aquasecurity/trivy-db:2
         with:
           scan-type: fs
           scanners: vuln,secret,misconfig
           severity: HIGH,CRITICAL
           ignore-unfixed: true
-          format: sarif
-          output: trivy-results.sarif
-      - name: Upload results to GitHub Security
-        if: always()
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: trivy-results.sarif
+          # Table output + exit code keeps this working on private repos
+          # (SARIF upload requires GitHub Advanced Security).
+          format: table
+          exit-code: "1"
