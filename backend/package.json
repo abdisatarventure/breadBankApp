@@ -9,7 +9,7 @@
     "start": "node dist/index.js"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.100.1",
+    "@anthropic-ai/sdk": "^0.112.4",
     "bcrypt": "^6.0.0",
     "cors": "^2.8.5",
     "csv-parse": "^5.5.3",
